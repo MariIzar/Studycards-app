@@ -1,0 +1,35 @@
+class ProgressModel {
+  final String userId;
+  final int totalCardsReviewed;
+  final int masteredCards;
+  final int pendingCards;
+  final double masteryPercentage; // Ex: 78%
+
+  ProgressModel({
+    required this.userId,
+    required this.totalCardsReviewed,
+    required this.masteredCards,
+    required this.pendingCards,
+    required this.masteryPercentage,
+  });
+
+  factory ProgressModel.fromMap(Map<String, dynamic> map) {
+    return ProgressModel(
+      userId: map['user_id'].toString(),
+      totalCardsReviewed: map['total_cards_reviewed'] ?? 0,
+      masteredCards: map['mastered_cards'] ?? 0,
+      pendingCards: map['pending_cards'] ?? 0,
+      masteryPercentage: (map['mastery_percentage'] ?? 0.0).toDouble(),
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'user_id': userId,
+      'total_cards_reviewed': totalCardsReviewed,
+      'mastered_cards': masteredCards,
+      'pending_cards': pendingCards,
+      'mastery_percentage': masteryPercentage,
+    };
+  }
+}

@@ -1,0 +1,34 @@
+class FlashcardModel {
+  final String id;
+  final String deckId; // ID do deck ao qual pertence
+  final String question;
+  final String answer;
+  final bool isMastered; // Para o controle de progresso (cards dominados)
+
+  FlashcardModel({
+    required this.id,
+    required this.deckId,
+    required this.question,
+    required this.answer,
+    this.isMastered = false,
+  });
+
+  factory FlashcardModel.fromMap(Map<String, dynamic> map) {
+    return FlashcardModel(
+      id: map['id'].toString(),
+      deckId: map['deck_id'].toString(),
+      question: map['question'] ?? '',
+      answer: map['answer'] ?? '',
+      isMastered: map['is_mastered'] == 1,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'deck_id': deckId,
+      'question': question,
+      'answer': answer,
+      'is_mastered': isMastered ? 1 : 0,
+    };
+  }
+}
