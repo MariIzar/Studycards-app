@@ -83,7 +83,6 @@ class StudyCardsApp extends StatelessWidget {
         '/review-image': (context) => const ReviewImageScreen(),
         '/processing': (context) => const ProcessingScreen(),
         '/generated-flashcards': (context) => const GeneratedFlashcardsScreen(),
-        '/edit-flashcard': (context) => const EditFlashcardScreen(),
         '/select-deck': (context) => const SelectDeckScreen(),
 
         // Rotas de Perfil e Sub-menus de Configuração
