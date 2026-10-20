@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'banco_de_dados/auth_helper.dart';
+import 'requer_login.dart';
 
 // Telas principais e de autenticação
 import 'login_screen.dart';
@@ -8,7 +9,6 @@ import 'register_screen.dart';
 import 'home_screen.dart';
 import 'about_app.dart';
 import 'forget_password.dart';
-import 'visitor_profile.dart'; // Nova tela de boas-vindas/visitante
 import 'account_created.dart'; // Nova tela de conta criada
 
 // Telas de Decks e Flashcards
@@ -60,10 +60,9 @@ class StudyCardsApp extends StatelessWidget {
       // ⚠️ Ajuste solicitado pelo professor:
       // Em vez de iniciar direto no Login ou na Home seca, iniciamos na
       // tela de boas-vindas/visitante (que permite entrar ou criar conta)[cite: 1].
-      initialRoute: Sessao.logado ? '/home' : '/visitor-profile',
+      initialRoute: '/home',
       routes: {
         // Rotas de Autenticação e Boas-Vindas
-        '/visitor-profile': (context) => const VisitorProfileScreen(),
         '/login': (context) => const LoginScreen(),
         '/register': (context) => const RegisterScreen(),
         '/forgot-password': (context) => const ForgotPasswordScreen(),
@@ -74,32 +73,43 @@ class StudyCardsApp extends StatelessWidget {
         '/about': (context) => const AboutScreen(),
 
         // Rotas de Decks e Flashcards
-        '/decks': (context) => const DecksScreen(),
-        '/deck-details': (context) => const DeckDetailsScreen(),
-        '/create-deck': (context) => const CreateDeckScreen(),
-        '/create-flashcards': (context) => const CreateFlashcardsScreen(),
+        '/decks': (context) => RequerLogin(child: const DecksScreen()),
+        '/deck-details': (context) =>
+            RequerLogin(child: const DeckDetailsScreen()),
+        '/create-deck': (context) =>
+            RequerLogin(child: const CreateDeckScreen()),
+        '/create-flashcards': (context) =>
+            RequerLogin(child: const CreateFlashcardsScreen()),
 
         // Rotas de Estudo e Revisão
-        '/study': (context) => const StudyScreen(),
-        '/review-completed': (context) => const ReviewCompletedScreen(),
+        '/study': (context) => RequerLogin(child: const StudyScreen()),
+        '/review-completed': (context) =>
+            RequerLogin(child: const ReviewCompletedScreen()),
 
         // Rotas do fluxo de IA e Câmera
-        '/camera': (context) => const CameraScreen(),
-        '/review-image': (context) => const ReviewImageScreen(),
-        '/processing': (context) => const ProcessingScreen(),
-        '/generated-flashcards': (context) => const GeneratedFlashcardsScreen(),
-        '/select-deck': (context) => const SelectDeckScreen(),
+        '/camera': (context) => RequerLogin(child: const CameraScreen()),
+        '/review-image': (context) =>
+            RequerLogin(child: const ReviewImageScreen()),
+        '/processing': (context) =>
+            RequerLogin(child: const ProcessingScreen()),
+        '/generated-flashcards': (context) =>
+            RequerLogin(child: const GeneratedFlashcardsScreen()),
+        '/select-deck': (context) =>
+            RequerLogin(child: const SelectDeckScreen()),
 
         // Rotas de Perfil e Sub-menus de Configuração
         '/profile': (context) => const ProfileScreen(),
         '/settings': (context) =>
             const SettingsScreen(), // <--- Nova rota de configurações
-        '/progress': (context) => const ProgressScreen(),
-        '/edit-profile': (context) => const EditProfileScreen(),
-        '/change-password': (context) => const ChangePasswordScreen(),
-        '/privacy-settings': (context) => const PrivacySettingsScreen(),
+        '/progress': (context) => RequerLogin(child: const ProgressScreen()),
+        '/edit-profile': (context) =>
+            RequerLogin(child: const EditProfileScreen()),
+        '/change-password': (context) =>
+            RequerLogin(child: const ChangePasswordScreen()),
+        '/privacy-settings': (context) =>
+            RequerLogin(child: const PrivacySettingsScreen()),
         '/notifications-settings': (context) =>
-            const NotificationsSettingsScreen(),
+            RequerLogin(child: const NotificationsSettingsScreen()),
         '/appearance': (context) => const AppearanceScreen(),
         '/language': (context) => const LanguageScreen(),
         '/help-support': (context) => const HelpSupportScreen(),

@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 
 import 'banco_de_dados/auth_helper.dart';
+import 'requer_login.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  /// Usado quando o login aparece no lugar de uma função protegida
+  /// (RequerLogin): chamado quando a pessoa conseguiu entrar.
+  final VoidCallback? onLogado;
+
+  const LoginScreen({super.key, this.onLogado});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -30,7 +35,11 @@ class _LoginScreenState extends State<LoginScreen> {
     final r = await AuthHelper.entrar(_emailCtrl.text, _senhaCtrl.text);
     if (!mounted) return;
     if (r.ok) {
-      Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
+      if (widget.onLogado != null) {
+        widget.onLogado!();
+      } else {
+        voltaDoLogin(context);
+      }
     } else {
       setState(() {
         _carregando = false;
@@ -272,8 +281,12 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                         GestureDetector(
-                          onTap: () {
-                            Navigator.pushNamed(context, '/register');
+                          onTap: () async {
+                            await Navigator.pushNamed(context, '/register');
+                            // cadastrou e entrou: libera a função
+                            if (mounted && Sessao.logado) {
+                              widget.onLogado?.call();
+                            }
                           },
                           child: const Text(
                             'Criar conta',
@@ -292,6 +305,17 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
           ),
+          // Botão voltar (quando a tela foi aberta por cima de outra)
+          if (Navigator.canPop(context))
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: IconButton(
+                  icon: const Icon(Icons.arrow_back, color: Colors.black),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ),
+            ),
         ],
       ),
     );
