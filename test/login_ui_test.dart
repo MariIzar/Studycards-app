@@ -25,7 +25,7 @@ void main() {
     FlutterError.onError = (d) {
       if (!d.toString().contains('overflowed')) antigo!(d);
     };
-    t.view.physicalSize = const Size(1080, 2400);
+    t.view.physicalSize = const Size(1500, 2400);
     t.view.devicePixelRatio = 2.75;
     addTearDown(t.view.reset);
 
@@ -37,10 +37,20 @@ void main() {
 
     await t.pumpWidget(const StudyCardsApp());
     await espera(t);
-    expect(find.text('Entre no StudyCards'), findsOneWidget);
+    final nav = () => t.state<NavigatorState>(find.byType(Navigator).first);
 
-    // Google não existe mais
-    t.state<NavigatorState>(find.byType(Navigator).first).pushNamed('/register');
+    // abre direto na Home, como visitante (sem tela de login)
+    expect(find.text('Olá, estudante!'), findsOneWidget);
+    expect(find.text('Entre no StudyCards'), findsNothing);
+
+    // usar uma função (progresso) pede login
+    nav().pushNamed('/progress');
+    await espera(t);
+    // vai direto para a tela de login (sem a tela de convite)
+    expect(find.text('Entre no StudyCards'), findsNothing);
+    expect(find.text('Ainda não possui conta? '), findsOneWidget);
+
+    await t.tap(find.text('Criar conta'));
     await espera(t);
     expect(find.text('Google'), findsNothing);
 
@@ -58,22 +68,36 @@ void main() {
     await espera(t);
     expect(find.text('Conta criada!'), findsOneWidget);
 
+    // continua na função que pediu o login (a tela de progresso abre)
     await t.tap(find.text('Começar a estudar'));
     await espera(t);
-    expect(find.text('Olá, Maria!'), findsOneWidget);
+    expect(find.text('Entre no StudyCards'), findsNothing);
+    expect(find.text('Conta criada!'), findsNothing);
+    expect(Sessao.logado, true);
 
-    // logout
-    t.state<NavigatorState>(find.byType(Navigator).first).pushNamed('/profile');
+    // logout pelo perfil volta para a Home de visitante
+    nav().pushNamed('/profile');
     await espera(t);
     expect(find.text('Maria Souza'), findsOneWidget);
     await t.ensureVisible(find.text('Sair da conta'));
     await t.tap(find.text('Sair da conta'));
     await espera(t);
-    expect(find.text('Entre no StudyCards'), findsOneWidget);
+    expect(find.text('Olá, estudante!'), findsOneWidget);
     expect(Sessao.logado, false);
 
-    // login errado e certo
-    t.state<NavigatorState>(find.byType(Navigator).first).pushNamed('/login');
+    // perfil de visitante: livre, com login, ajuda, configurações e sobre
+    nav().pushNamed('/profile');
+    await espera(t);
+    expect(find.text('Visitante'), findsOneWidget);
+    expect(find.text('Fazer login'), findsOneWidget);
+    expect(find.text('Configurações'), findsOneWidget);
+    expect(find.text('Ajuda e suporte'), findsOneWidget);
+    expect(find.text('Sobre o StudyCards'), findsOneWidget);
+    expect(find.text('Meus decks'), findsNothing);
+    expect(find.text('Sair da conta'), findsNothing);
+
+    // login errado e certo a partir do perfil
+    await t.tap(find.text('Fazer login'));
     await espera(t);
     expect(find.text('Google'), findsNothing);
     await t.enterText(find.byType(TextField).at(0), 'maria@mail.com');
@@ -84,7 +108,10 @@ void main() {
     await t.enterText(find.byType(TextField).at(1), 'Senha123');
     await t.tap(find.text('Entrar'));
     await espera(t);
-    expect(find.text('Olá, Maria!'), findsOneWidget);
+    // voltou ao perfil, já logado
+    expect(find.text('Maria Souza'), findsOneWidget);
+    expect(find.text('Fazer login'), findsNothing);
+    expect(find.text('Meus decks'), findsOneWidget);
     FlutterError.onError = antigo;
   });
 }

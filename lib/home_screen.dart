@@ -41,6 +41,20 @@ class _HomeScreenState extends State<HomeScreen> {
       deckError = null;
     });
 
+    // Visitante: Home vazia, sem consultar o banco.
+    if (!Sessao.logado) {
+      setState(() {
+        decks = [];
+        pendingCards = 0;
+        totalCards = 0;
+        masteredCards = 0;
+        masteryPercentage = 0;
+        isLoadingDecks = false;
+        deckError = null;
+      });
+      return;
+    }
+
     try {
       final results = await Future.wait<dynamic>([
         SQLHelper.pegaDecks(usuarioId: Sessao.usuarioId),
@@ -100,7 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // COMEÇA REVISÃO DE TODOS OS CARDS PENDENTES
   Future<void> _startReview() async {
-    if (pendingCards == 0) return;
+    if (Sessao.logado && pendingCards == 0) return;
 
     await Navigator.pushNamed(context, '/study');
 
@@ -142,7 +156,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Olá, ${Sessao.primeiroNome}!',
+                                Sessao.logado ? 'Olá, ${Sessao.primeiroNome}!' : 'Olá, estudante!',
                                 style: const TextStyle(
                                   fontSize: 22,
                                   fontWeight: FontWeight.bold,

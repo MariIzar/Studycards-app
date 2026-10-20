@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'requer_login.dart';
+
 class AccountCreatedScreen extends StatelessWidget {
   const AccountCreatedScreen({super.key});
 
@@ -17,8 +19,7 @@ class AccountCreatedScreen extends StatelessWidget {
             children: [
               IconButton(
                 icon: const Icon(Icons.arrow_back, color: Colors.black),
-                onPressed: () =>
-                    Navigator.pushReplacementNamed(context, '/home'),
+                onPressed: () => voltaDoLogin(context),
               ),
               Expanded(
                 child: Center(
@@ -53,8 +54,7 @@ class AccountCreatedScreen extends StatelessWidget {
                             borderRadius: BorderRadius.circular(16),
                           ),
                         ),
-                        onPressed: () =>
-                            Navigator.pushReplacementNamed(context, '/home'),
+                        onPressed: () => voltaDoLogin(context),
                         child: const Text(
                           'Começar a estudar',
                           style: TextStyle(

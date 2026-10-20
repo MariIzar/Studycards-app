@@ -2,11 +2,23 @@ import 'package:flutter/material.dart';
 
 import 'banco_de_dados/auth_helper.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
   @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  // Abre o login e atualiza o perfil quando a pessoa voltar logada.
+  Future<void> _fazerLogin() async {
+    await Navigator.pushNamed(context, '/login');
+    if (mounted) setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final logado = Sessao.logado;
     const primaryPurple = Color(0xFF6C4DFF);
 
     return Scaffold(
@@ -20,50 +32,83 @@ class ProfileScreen extends StatelessWidget {
                 children: [
                   const SizedBox(height: 10),
 
-                  // Cabeçalho de Usuário (Avatar "B" + Nome/Cargo)
+                  // Cabeçalho (usuário logado ou visitante)
                   Row(
                     children: [
                       CircleAvatar(
                         radius: 36,
                         backgroundColor: primaryPurple,
-                        child: Text(
-                          Sessao.inicial,
-                          style: const TextStyle(
-                            fontSize: 32,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
+                        child: logado
+                            ? Text(
+                                Sessao.inicial,
+                                style: const TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.person_outline,
+                                size: 36,
+                                color: Colors.white,
+                              ),
                       ),
                       const SizedBox(width: 16),
                       Expanded(
-                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            Sessao.nome,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              logado ? Sessao.nome : 'Visitante',
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
                             ),
-                          ),
-                          SizedBox(height: 2),
-                          Text(
-                            Sessao.ocupacao,
-                            style: const TextStyle(
-                                fontSize: 15, color: Colors.grey),
-                          ),
-                        ],
-                       ),
+                            const SizedBox(height: 2),
+                            Text(
+                              logado
+                                  ? Sessao.ocupacao
+                                  : 'Entre para salvar seu progresso',
+                              style: const TextStyle(
+                                fontSize: 15,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 28),
 
-                  // Lista de opções em cards separados
-                  // Ajustado para abrir a tela geral de Configurações (/settings)
+                  // Visitante: botão de login em destaque
+                  if (!logado) ...[
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: primaryPurple,
+                        minimumSize: const Size.fromHeight(54),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      onPressed: _fazerLogin,
+                      child: const Text(
+                        'Fazer login',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
+
+                  // Opções liberadas para todos
                   _buildMenuCard(
                     icon: Icons.settings_outlined,
                     title: 'Configurações',
@@ -71,22 +116,9 @@ class ProfileScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   _buildMenuCard(
-                    icon: Icons.notifications_none_rounded,
-                    title: 'Notificações',
-                    onTap: () =>
-                        Navigator.pushNamed(context, '/notifications-settings'),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildMenuCard(
-                    icon: Icons.menu_book_outlined,
-                    title: 'Meus decks',
-                    onTap: () => Navigator.pushNamed(context, '/decks'),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildMenuCard(
-                    icon: Icons.bar_chart_rounded,
-                    title: 'Meu progresso',
-                    onTap: () => Navigator.pushNamed(context, '/progress'),
+                    icon: Icons.help_outline_rounded,
+                    title: 'Ajuda e suporte',
+                    onTap: () => Navigator.pushNamed(context, '/help-support'),
                   ),
                   const SizedBox(height: 12),
                   _buildMenuCard(
@@ -94,48 +126,74 @@ class ProfileScreen extends StatelessWidget {
                     title: 'Sobre o StudyCards',
                     onTap: () => Navigator.pushNamed(context, '/about'),
                   ),
-                  const SizedBox(height: 24),
 
-                  // Botão Sair da conta estilizado
-                  OutlinedButton(
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(54),
-                      side: const BorderSide(color: primaryPurple, width: 1.2),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+                  // Opções só para quem está logado
+                  if (logado) ...[
+                    const SizedBox(height: 12),
+                    _buildMenuCard(
+                      icon: Icons.notifications_none_rounded,
+                      title: 'Notificações',
+                      onTap: () => Navigator.pushNamed(
+                        context,
+                        '/notifications-settings',
                       ),
                     ),
-                    onPressed: () async {
-                      await AuthHelper.sair();
-                      if (!context.mounted) return;
-                      Navigator.pushNamedAndRemoveUntil(
-                        context,
-                        '/visitor-profile',
-                        (route) => false,
-                      );
-                    },
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: const [
-                        Text(
-                          'Sair da conta',
-                          style: TextStyle(
-                            color: Color(
-                              0xFFE53935,
-                            ), // Tom avermelhado elegante
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        SizedBox(width: 8),
-                        Icon(
-                          Icons.chevron_right,
-                          color: Color(0xFFE53935),
-                          size: 20,
-                        ),
-                      ],
+                    const SizedBox(height: 12),
+                    _buildMenuCard(
+                      icon: Icons.menu_book_outlined,
+                      title: 'Meus decks',
+                      onTap: () => Navigator.pushNamed(context, '/decks'),
                     ),
-                  ),
+                    const SizedBox(height: 12),
+                    _buildMenuCard(
+                      icon: Icons.bar_chart_rounded,
+                      title: 'Meu progresso',
+                      onTap: () => Navigator.pushNamed(context, '/progress'),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Botão Sair da conta
+                    OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(54),
+                        side: const BorderSide(
+                          color: primaryPurple,
+                          width: 1.2,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      onPressed: () async {
+                        await AuthHelper.sair();
+                        if (!context.mounted) return;
+                        Navigator.pushNamedAndRemoveUntil(
+                          context,
+                          '/home',
+                          (route) => false,
+                        );
+                      },
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            'Sair da conta',
+                            style: TextStyle(
+                              color: Color(0xFFE53935),
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          SizedBox(width: 8),
+                          Icon(
+                            Icons.chevron_right,
+                            color: Color(0xFFE53935),
+                            size: 20,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

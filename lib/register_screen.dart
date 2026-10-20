@@ -39,8 +39,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
     if (!mounted) return;
     if (r.ok) {
-      Navigator.pushNamedAndRemoveUntil(
-          context, '/account-created', (_) => false);
+      Navigator.pushNamed(context, '/account-created');
     } else {
       setState(() {
         _carregando = false;
