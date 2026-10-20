@@ -71,4 +71,4 @@ setState(() => _decks = decks);
 - **Errei**: o card volta amanhã e as repetições voltam para 0.
 - **Acertos seguidos**: 1 dia → 6 dias → intervalo anterior × fator de facilidade.
 - O fator começa em 2,5. Respostas fáceis aumentam o fator e respostas difíceis diminuem (o mínimo é 1,3).
-- Um card é marcado como **dominado** (`is_mastered = 1`) quando o intervalo chega a 21 dias ou mais.
+- Um card é marcado como **dominado** (`is_mastered = 1`) quando o aluno acerta o card (Difícil/Fácil/Muito fácil contam como acerto; Errei tira o status). A repetição espaçada continua: o card volta a aparecer no intervalo calculado pelo SM-2.

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'banco_de_dados/auth_helper.dart';
+
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
@@ -21,12 +23,12 @@ class ProfileScreen extends StatelessWidget {
                   // Cabeçalho de Usuário (Avatar "B" + Nome/Cargo)
                   Row(
                     children: [
-                      const CircleAvatar(
+                      CircleAvatar(
                         radius: 36,
                         backgroundColor: primaryPurple,
                         child: Text(
-                          'B',
-                          style: TextStyle(
+                          Sessao.inicial,
+                          style: const TextStyle(
                             fontSize: 32,
                             fontWeight: FontWeight.bold,
                             color: Colors.white,
@@ -34,12 +36,14 @@ class ProfileScreen extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 16),
-                      const Column(
+                      Expanded(
+                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Bárbara',
-                            style: TextStyle(
+                            Sessao.nome,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
                               fontSize: 22,
                               fontWeight: FontWeight.bold,
                               color: Colors.black87,
@@ -47,10 +51,12 @@ class ProfileScreen extends StatelessWidget {
                           ),
                           SizedBox(height: 2),
                           Text(
-                            'Estudante',
-                            style: TextStyle(fontSize: 15, color: Colors.grey),
+                            Sessao.ocupacao,
+                            style: const TextStyle(
+                                fontSize: 15, color: Colors.grey),
                           ),
                         ],
+                       ),
                       ),
                     ],
                   ),
@@ -99,7 +105,9 @@ class ProfileScreen extends StatelessWidget {
                         borderRadius: BorderRadius.circular(16),
                       ),
                     ),
-                    onPressed: () {
+                    onPressed: () async {
+                      await AuthHelper.sair();
+                      if (!context.mounted) return;
                       Navigator.pushNamedAndRemoveUntil(
                         context,
                         '/visitor-profile',

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'banco_de_dados/auth_helper.dart';
 import 'banco_de_dados/sql_helper.dart';
 
 class CreateDeckScreen extends StatefulWidget {
@@ -45,6 +46,7 @@ class _CreateDeckScreenState extends State<CreateDeckScreen> {
     try {
       final int id = await SQLHelper.adicionaDeck(
         name,
+        usuarioId: Sessao.usuarioId,
         cor: deckColors[selectedColorIndex].toARGB32(),
       );
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'banco_de_dados/auth_helper.dart';
 import 'banco_de_dados/sql_helper.dart';
 
 class ProgressScreen extends StatefulWidget {
@@ -45,7 +46,9 @@ class _ProgressScreenState extends State<ProgressScreen> {
     }
 
     try {
-      final stats = await SQLHelper.pegaEstatisticas();
+      final stats = await SQLHelper.pegaEstatisticas(
+        usuarioId: Sessao.usuarioId,
+      );
       final database = await SQLHelper.db();
 
       // DESEMPENHO POR DECK / MATÉRIA
@@ -62,9 +65,10 @@ class _ProgressScreenState extends State<ProgressScreen> {
           ), 0) AS mastered_cards
         FROM decks d
         LEFT JOIN flashcards f ON f.deck_id = d.id
+        WHERE d.user_id = ?
         GROUP BY d.id, d.title
         ORDER BY d.title COLLATE NOCASE
-      ''');
+      ''', [Sessao.usuarioId]);
 
       final progressList = decks.map((deck) {
         final total = _toInt(deck['total_cards']);

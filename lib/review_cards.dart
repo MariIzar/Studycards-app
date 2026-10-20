@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'banco_de_dados/auth_helper.dart';
 import 'banco_de_dados/sql_helper.dart';
 import 'banco_de_dados/repeticao_espacada.dart';
 
@@ -32,6 +33,9 @@ class _StudyScreenState extends State<StudyScreen> {
 
   DateTime? sessionStart;
 
+  // Já perguntou o que fazer ao chegar nos cards acertados?
+  bool askedAboutMastered = false;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -63,7 +67,9 @@ class _StudyScreenState extends State<StudyScreen> {
       // Sem deck, mantém a revisão espaçada geral.
       final result = deckId != null
           ? await SQLHelper.pegaFlashcardsDoDeck(deckId!)
-          : await SQLHelper.pegaFlashcardsPendentes();
+          : await SQLHelper.pegaFlashcardsPendentes(
+              usuarioId: Sessao.usuarioId,
+            );
 
       if (!mounted) return;
 
@@ -82,6 +88,11 @@ class _StudyScreenState extends State<StudyScreen> {
 
         sessionStart = DateTime.now();
       });
+
+      // Deck só com cards acertados: já pergunta de início.
+      if (deckId != null && result.isNotEmpty) {
+        await _stopAtMasteredBoundary(0);
+      }
     } catch (e) {
       if (!mounted) return;
 
@@ -135,6 +146,10 @@ class _StudyScreenState extends State<StudyScreen> {
       }
 
       if (currentIndex < flashcards.length - 1) {
+        // Chegou nos cards já acertados? Deixa a pessoa escolher o que fazer.
+        if (await _stopAtMasteredBoundary(currentIndex + 1)) return;
+        if (!mounted) return;
+
         setState(() {
           currentIndex++;
           showAnswer = false;
@@ -171,6 +186,118 @@ class _StudyScreenState extends State<StudyScreen> {
         context,
       ).showSnackBar(SnackBar(content: Text('Erro ao registrar revisão: $e')));
     }
+  }
+
+  // Ao chegar no 1º card acertado (estudo por deck), pergunta o que fazer.
+  // Retorna true se a pessoa escolheu sair da revisão.
+  Future<bool> _stopAtMasteredBoundary(int nextIndex) async {
+    if (deckId == null || askedAboutMastered) return false;
+    if (flashcards[nextIndex]['is_mastered'] != 1) return false;
+
+    askedAboutMastered = true;
+    final escolha = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        Widget opcao(String texto, String valor, {bool destaque = false}) {
+          return SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: destaque
+                ? ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryPurple,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    onPressed: () => Navigator.pop(dialogContext, valor),
+                    child: Text(
+                      texto,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
+                  )
+                : OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: primaryPurple, width: 1.2),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    onPressed: () => Navigator.pop(dialogContext, valor),
+                    child: Text(
+                      texto,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: primaryPurple,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+          );
+        }
+
+        return Dialog(
+          backgroundColor: backgroundColor,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Icon(
+                  Icons.check_circle_outline,
+                  size: 44,
+                  color: Color(0xFF2ECC71),
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  'Você chegou nos cards acertados',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Os cards errados e novos acabaram.\nO que você quer fazer?',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.black54, height: 1.4),
+                ),
+                const SizedBox(height: 24),
+                opcao('Continuar a revisão', 'continuar', destaque: true),
+                const SizedBox(height: 12),
+                opcao('Continuar na matéria', 'materia'),
+                const SizedBox(height: 12),
+                opcao('Voltar para a Home', 'home'),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (!mounted) return true;
+
+    if (escolha == 'home') {
+      Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
+      return true;
+    }
+    if (escolha == 'materia') {
+      // volta para a tela do deck (a matéria)
+      Navigator.pop(context);
+      return true;
+    }
+    return false; // continuar a revisão
   }
 
   // BOTÕES DE AVALIAÇÃO

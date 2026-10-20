@@ -1,10 +1,63 @@
 import 'package:flutter/material.dart';
 
-class ChangePasswordScreen extends StatelessWidget {
+import 'banco_de_dados/auth_helper.dart';
+
+class ChangePasswordScreen extends StatefulWidget {
   const ChangePasswordScreen({super.key});
 
   @override
+  State<ChangePasswordScreen> createState() => _ChangePasswordScreenState();
+}
+
+class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
+  final _atualCtrl = TextEditingController();
+  final _novaCtrl = TextEditingController();
+  final _confirmaCtrl = TextEditingController();
+  bool _carregando = false;
+  String? _erro;
+
+  @override
+  void initState() {
+    super.initState();
+    // atualiza os requisitos (✓/✗) enquanto o usuário digita
+    _novaCtrl.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _atualCtrl.dispose();
+    _novaCtrl.dispose();
+    _confirmaCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _salvar() async {
+    setState(() {
+      _carregando = true;
+      _erro = null;
+    });
+    final r = await AuthHelper.alterarSenha(
+      atual: _atualCtrl.text,
+      nova: _novaCtrl.text,
+      confirmacao: _confirmaCtrl.text,
+    );
+    if (!mounted) return;
+    if (r.ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Senha alterada com sucesso!')),
+      );
+      Navigator.pop(context);
+    } else {
+      setState(() {
+        _carregando = false;
+        _erro = r.erro;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final nova = _novaCtrl.text;
     const primaryPurple = Color(0xFF6C4DFF);
 
     return Scaffold(
@@ -35,7 +88,7 @@ class ChangePasswordScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              _buildPasswordField('Digite sua senha atual'),
+              _buildPasswordField('Digite sua senha atual', _atualCtrl),
               const SizedBox(height: 20),
               const Text(
                 'Nova senha',
@@ -45,7 +98,7 @@ class ChangePasswordScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              _buildPasswordField('Digite sua nova senha'),
+              _buildPasswordField('Digite sua nova senha', _novaCtrl),
               const SizedBox(height: 20),
               const Text(
                 'Confirmar nova senha',
@@ -55,7 +108,7 @@ class ChangePasswordScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              _buildPasswordField('Confirme sua nova senha'),
+              _buildPasswordField('Confirme sua nova senha', _confirmaCtrl),
               const SizedBox(height: 24),
               Container(
                 padding: const EdgeInsets.all(16),
@@ -74,13 +127,20 @@ class ChangePasswordScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    _buildRequirementRow('Pelo menos 8 caracteres', true),
-                    _buildRequirementRow('Uma letra maiúscula', true),
-                    _buildRequirementRow('Uma letra minúscula', true),
-                    _buildRequirementRow('Um número', true),
+                    _buildRequirementRow('Pelo menos 8 caracteres', AuthHelper.temOito(nova)),
+                    _buildRequirementRow('Uma letra maiúscula', AuthHelper.temMaiuscula(nova)),
+                    _buildRequirementRow('Uma letra minúscula', AuthHelper.temMinuscula(nova)),
+                    _buildRequirementRow('Um número', AuthHelper.temNumero(nova)),
                   ],
                 ),
               ),
+              if (_erro != null) ...[
+                const SizedBox(height: 16),
+                Text(
+                  _erro!,
+                  style: const TextStyle(color: Color(0xFFE53935), fontSize: 13),
+                ),
+              ],
               const SizedBox(height: 32),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
@@ -91,7 +151,7 @@ class ChangePasswordScreen extends StatelessWidget {
                     borderRadius: BorderRadius.circular(16),
                   ),
                 ),
-                onPressed: () => Navigator.pop(context),
+                onPressed: _carregando ? null : _salvar,
                 child: const Text(
                   'Salvar nova senha',
                   style: TextStyle(
@@ -108,7 +168,7 @@ class ChangePasswordScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildPasswordField(String hint) {
+  Widget _buildPasswordField(String hint, TextEditingController controller) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -122,6 +182,7 @@ class ChangePasswordScreen extends StatelessWidget {
         ],
       ),
       child: TextField(
+        controller: controller,
         obscureText: true,
         decoration: InputDecoration(
           hintText: hint,

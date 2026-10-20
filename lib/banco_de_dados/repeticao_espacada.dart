@@ -5,7 +5,8 @@
 //   - errou       -> o card volta amanhã e o progresso dele é zerado
 //   - acertou     -> o intervalo cresce: 1 dia, 6 dias, depois x fator
 //   - o "fator de facilidade" sobe com respostas fáceis e desce com difíceis
-// Um card é considerado DOMINADO quando o intervalo chega a 21 dias ou mais.
+// Um card é considerado DOMINADO quando o aluno acerta 1 vez
+// (errar zera a sequência).
 // =============================================================================
 
 /// Botões que aparecem na tela de revisão.
@@ -32,7 +33,7 @@ class ResultadoRevisao {
     required this.repeticoes,
   });
 
-  bool get dominado => intervaloDias >= RepeticaoEspacada.diasParaDominar;
+  bool get dominado => repeticoes >= RepeticaoEspacada.acertosParaDominar;
 
   DateTime proximaRevisao(DateTime agora) =>
       agora.add(Duration(days: intervaloDias));
@@ -40,7 +41,7 @@ class ResultadoRevisao {
 
 class RepeticaoEspacada {
   static const double fatorMinimo = 1.3;
-  static const int diasParaDominar = 21;
+  static const int acertosParaDominar = 1;
 
   static ResultadoRevisao calcula({
     required Avaliacao avaliacao,

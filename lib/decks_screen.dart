@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'banco_de_dados/auth_helper.dart';
 import 'banco_de_dados/sql_helper.dart';
 
 class DecksScreen extends StatefulWidget {
@@ -40,7 +41,7 @@ class _DecksScreenState extends State<DecksScreen> {
     });
 
     try {
-      final result = await SQLHelper.pegaDecks();
+      final result = await SQLHelper.pegaDecks(usuarioId: Sessao.usuarioId);
 
       if (!mounted) return;
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'banco_de_dados/auth_helper.dart';
 import 'banco_de_dados/sql_helper.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -42,8 +43,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final results = await Future.wait<dynamic>([
-        SQLHelper.pegaDecks(),
-        SQLHelper.pegaEstatisticas(),
+        SQLHelper.pegaDecks(usuarioId: Sessao.usuarioId),
+        SQLHelper.pegaEstatisticas(usuarioId: Sessao.usuarioId),
       ]);
 
       final loadedDecks = results[0] as List<Map<String, dynamic>>;
@@ -136,13 +137,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Expanded(
+                        Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Olá, Barbara!',
-                                style: TextStyle(
+                                'Olá, ${Sessao.primeiroNome}!',
+                                style: const TextStyle(
                                   fontSize: 22,
                                   fontWeight: FontWeight.bold,
                                   color: Colors.black,
