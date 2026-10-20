@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'banco_de_dados/auth_helper.dart';
 import 'banco_de_dados/sql_helper.dart';
 
 class SelectDeckScreen extends StatefulWidget {
@@ -25,7 +26,7 @@ class _SelectDeckScreenState extends State<SelectDeckScreen> {
   // Busca os decks no SQLite
   Future<void> _loadDecks() async {
     try {
-      final result = await SQLHelper.pegaDecks();
+      final result = await SQLHelper.pegaDecks(usuarioId: Sessao.usuarioId);
 
       if (!mounted) return;
 

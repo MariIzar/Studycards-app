@@ -6,7 +6,7 @@ import 'repeticao_espacada.dart';
 
 class SQLHelper {
   static const String _nomeBanco = 'studycards.db';
-  static const int _versaoBanco = 2;
+  static const int _versaoBanco = 3;
 
   static sql.Database? _banco;
 
@@ -21,6 +21,8 @@ class SQLHelper {
         photo_url TEXT,
         is_profile_visible INTEGER NOT NULL DEFAULT 1,
         notify_study_reminder INTEGER NOT NULL DEFAULT 1,
+        password_hash TEXT,
+        password_salt TEXT,
         createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
     """);
@@ -98,6 +100,11 @@ class SQLHelper {
             'ALTER TABLE decks ADD COLUMN color '
             'INTEGER NOT NULL DEFAULT 4285287935',
           );
+        }
+        if (oldVersion < 3) {
+          // Login local: senha guardada como hash + sal (nunca em texto puro)
+          await database.execute('ALTER TABLE users ADD COLUMN password_hash TEXT');
+          await database.execute('ALTER TABLE users ADD COLUMN password_salt TEXT');
         }
       },
     );
@@ -339,7 +346,10 @@ class SQLHelper {
       'flashcards',
       where: 'deck_id = ?',
       whereArgs: [deckId],
-      orderBy: 'id',
+      // 1º novos (nunca revisados), 2º errados (revisados e sem acerto),
+      // 3º acertados
+      orderBy: 'CASE WHEN last_review IS NULL THEN 0 '
+          'WHEN is_mastered = 0 THEN 1 ELSE 2 END, id',
     );
   }
 
@@ -356,24 +366,86 @@ class SQLHelper {
 
   static Future<List<Map<String, dynamic>>> pegaFlashcardsPendentes({
     int? deckId,
+    int? usuarioId,
   }) async {
     final database = await db();
 
-    if (deckId == null) {
-      return database.query(
-        'flashcards',
-        where: 'next_review <= ?',
-        whereArgs: [_agora()],
-        orderBy: 'next_review',
-      );
+    final where = <String>['f.next_review <= ?'];
+    final args = <Object?>[_agora()];
+    if (deckId != null) {
+      where.add('f.deck_id = ?');
+      args.add(deckId);
+    }
+    if (usuarioId != null) {
+      where.add('d.user_id = ?');
+      args.add(usuarioId);
     }
 
-    return database.query(
-      'flashcards',
-      where: 'deck_id = ? AND next_review <= ?',
-      whereArgs: [deckId, _agora()],
-      orderBy: 'next_review',
+    return database.rawQuery(
+      'SELECT f.* FROM flashcards f JOIN decks d ON d.id = f.deck_id '
+      'WHERE ${where.join(' AND ')} ORDER BY f.next_review',
+      args,
     );
+  }
+
+  /// Decks sem dono (criados antes do login existir) passam para o usuário.
+  static Future<int> adotaDecksSemDono(int usuarioId) async {
+    final database = await db();
+    return database.update(
+      'decks',
+      {'user_id': usuarioId},
+      where: 'user_id IS NULL',
+    );
+  }
+
+  /// Cadastro local: falha (lança) se o e-mail já existir.
+  static Future<int> inserePerfilLocal({
+    required String nome,
+    required String email,
+    required String hash,
+    required String sal,
+  }) async {
+    final database = await db();
+    return database.insert('users', {
+      'name': nome,
+      'email': email,
+      'password_hash': hash,
+      'password_salt': sal,
+    }, conflictAlgorithm: sql.ConflictAlgorithm.abort);
+  }
+
+  static Future<int> atualizaSenhaUsuario(
+      int id, String hash, String sal) async {
+    final database = await db();
+    return database.update(
+      'users',
+      {'password_hash': hash, 'password_salt': sal},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  static Future<int> atualizaDadosPerfil(
+      int id, String nome, String email, String ocupacao) async {
+    final database = await db();
+    return database.update(
+      'users',
+      {'name': nome, 'email': email, 'occupation': ocupacao},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  static Future<int> atualizaPreferenciasUsuario(int id,
+      {bool? perfilVisivel, bool? lembreteEstudo}) async {
+    final database = await db();
+    final v = <String, Object?>{
+      if (perfilVisivel != null) 'is_profile_visible': perfilVisivel ? 1 : 0,
+      if (lembreteEstudo != null)
+        'notify_study_reminder': lembreteEstudo ? 1 : 0,
+    };
+    if (v.isEmpty) return 0;
+    return database.update('users', v, where: 'id = ?', whereArgs: [id]);
   }
 
   static Future<int> atualizaFlashcard(

@@ -1,7 +1,53 @@
 import 'package:flutter/material.dart';
 
-class RegisterScreen extends StatelessWidget {
+import 'banco_de_dados/auth_helper.dart';
+
+class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
+
+  @override
+  State<RegisterScreen> createState() => _RegisterScreenState();
+}
+
+class _RegisterScreenState extends State<RegisterScreen> {
+  final _nomeCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _senhaCtrl = TextEditingController();
+  final _confirmaCtrl = TextEditingController();
+  bool _carregando = false;
+  String? _erro;
+
+  @override
+  void dispose() {
+    _nomeCtrl.dispose();
+    _emailCtrl.dispose();
+    _senhaCtrl.dispose();
+    _confirmaCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _cadastrar() async {
+    setState(() {
+      _carregando = true;
+      _erro = null;
+    });
+    final r = await AuthHelper.cadastrar(
+      nome: _nomeCtrl.text,
+      email: _emailCtrl.text,
+      senha: _senhaCtrl.text,
+      confirmacao: _confirmaCtrl.text,
+    );
+    if (!mounted) return;
+    if (r.ok) {
+      Navigator.pushNamedAndRemoveUntil(
+          context, '/account-created', (_) => false);
+    } else {
+      setState(() {
+        _carregando = false;
+        _erro = r.erro;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -43,25 +89,41 @@ class RegisterScreen extends StatelessWidget {
                 const SizedBox(height: 32),
 
                 // Campo: Nome completo
-                _buildInputField(hint: 'Nome completo'),
+                _buildInputField(hint: 'Nome completo', controller: _nomeCtrl),
                 const SizedBox(height: 14),
 
                 // Campo: E-mail
                 _buildInputField(
                   hint: 'E-mail',
+                  controller: _emailCtrl,
                   keyboardType: TextInputType.emailAddress,
                 ),
                 const SizedBox(height: 14),
 
                 // Campo: Senha
-                _buildInputField(hint: 'Senha', obscureText: true),
+                _buildInputField(hint: 'Senha', obscureText: true, controller: _senhaCtrl),
                 const SizedBox(height: 14),
 
                 // Campo: Confirmar senha
-                _buildInputField(hint: 'Confirmar senha', obscureText: true),
+                _buildInputField(
+                    hint: 'Confirmar senha',
+                    obscureText: true,
+                    controller: _confirmaCtrl),
                 const SizedBox(height: 24),
 
-                // Botão "Criar minha conta" -> Navega para /home
+                if (_erro != null) ...[
+                  Text(
+                    _erro!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFFE53935),
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+
+                // Botão "Criar minha conta"
                 SizedBox(
                   width: double.infinity,
                   height: 52,
@@ -73,65 +135,11 @@ class RegisterScreen extends StatelessWidget {
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                    onPressed: () {
-                      Navigator.pushReplacementNamed(context, '/home');
-                    },
+                    onPressed: _carregando ? null : _cadastrar,
                     child: const Text(
                       'Criar minha conta',
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-
-                // Divisor
-                Row(
-                  children: const [
-                    Expanded(child: Divider(color: Colors.black26, thickness: 0.8)),
-                    Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 12.0),
-                      child: Text(
-                        'ou cadastre-se com',
-                        style: TextStyle(color: Colors.black54, fontSize: 13),
-                      ),
-                    ),
-                    Expanded(child: Divider(color: Colors.black26, thickness: 0.8)),
-                  ],
-                ),
-                const SizedBox(height: 24),
-
-                // Botão Google
-                Container(
-                  width: double.infinity,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.03),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    onPressed: () {},
-                    child: const Text(
-                      'Google',
-                      style: TextStyle(
-                        color: Colors.black,
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                       ),
@@ -180,6 +188,7 @@ class RegisterScreen extends StatelessWidget {
     required String hint,
     bool obscureText = false,
     TextInputType keyboardType = TextInputType.text,
+    TextEditingController? controller,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -194,6 +203,7 @@ class RegisterScreen extends StatelessWidget {
         ],
       ),
       child: TextField(
+        controller: controller,
         obscureText: obscureText,
         keyboardType: keyboardType,
         decoration: InputDecoration(

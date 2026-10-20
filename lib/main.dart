@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'banco_de_dados/auth_helper.dart';
+
 // Telas principais e de autenticação
 import 'login_screen.dart';
 import 'register_screen.dart';
@@ -35,7 +37,10 @@ import 'appearance_screen.dart';
 import 'lenguage_screen.dart';
 import 'help_support.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Recupera quem estava logado (login local, sem servidor)
+  await Sessao.carrega();
   runApp(const StudyCardsApp());
 }
 
@@ -55,7 +60,7 @@ class StudyCardsApp extends StatelessWidget {
       // ⚠️ Ajuste solicitado pelo professor:
       // Em vez de iniciar direto no Login ou na Home seca, iniciamos na
       // tela de boas-vindas/visitante (que permite entrar ou criar conta)[cite: 1].
-      initialRoute: '/visitor-profile',
+      initialRoute: Sessao.logado ? '/home' : '/visitor-profile',
       routes: {
         // Rotas de Autenticação e Boas-Vindas
         '/visitor-profile': (context) => const VisitorProfileScreen(),

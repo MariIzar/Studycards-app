@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'banco_de_dados/auth_helper.dart';
+import 'banco_de_dados/sql_helper.dart';
+
 class NotificationsSettingsScreen extends StatefulWidget {
   const NotificationsSettingsScreen({super.key});
 
@@ -14,6 +17,20 @@ class _NotificationsSettingsScreenState
   bool newDecks = true;
   bool reviewCompleted = true;
   bool dailyTips = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _carrega();
+  }
+
+  Future<void> _carrega() async {
+    final id = Sessao.usuarioId;
+    if (id == null) return;
+    final u = await SQLHelper.pegaUmUsuario(id);
+    if (!mounted || u.isEmpty) return;
+    setState(() => studyReminder = u.first['notify_study_reminder'] == 1);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -120,7 +137,15 @@ class _NotificationsSettingsScreenState
                   borderRadius: BorderRadius.circular(14),
                 ),
               ),
-              onPressed: () => Navigator.pop(context),
+              onPressed: () async {
+                final id = Sessao.usuarioId;
+                if (id != null) {
+                  await SQLHelper.atualizaPreferenciasUsuario(id,
+                      lembreteEstudo: studyReminder);
+                }
+                if (!context.mounted) return;
+                Navigator.pop(context);
+              },
               child: const Text(
                 'Salvar alterações',
                 style: TextStyle(

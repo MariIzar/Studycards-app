@@ -1,7 +1,82 @@
 import 'package:flutter/material.dart';
 
-class ForgotPasswordScreen extends StatelessWidget {
+import 'banco_de_dados/auth_helper.dart';
+
+class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
+
+  @override
+  State<ForgotPasswordScreen> createState() => _ForgotPasswordScreenState();
+}
+
+class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
+  final _emailCtrl = TextEditingController();
+  final _novaCtrl = TextEditingController();
+  final _confirmaCtrl = TextEditingController();
+  bool _carregando = false;
+  String? _erro;
+
+  @override
+  void dispose() {
+    _emailCtrl.dispose();
+    _novaCtrl.dispose();
+    _confirmaCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _redefinir() async {
+    setState(() {
+      _carregando = true;
+      _erro = null;
+    });
+    final r = await AuthHelper.redefinirSenha(
+      email: _emailCtrl.text,
+      nova: _novaCtrl.text,
+      confirmacao: _confirmaCtrl.text,
+    );
+    if (!mounted) return;
+    if (r.ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Senha redefinida! Entre com a nova senha.')),
+      );
+      Navigator.pop(context);
+    } else {
+      setState(() {
+        _carregando = false;
+        _erro = r.erro;
+      });
+    }
+  }
+
+  Widget _campo(String hint, TextEditingController c,
+      {bool senha = false, TextInputType? tipo}) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: c,
+        obscureText: senha,
+        keyboardType: tipo,
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: const TextStyle(color: Colors.black45, fontSize: 15),
+          border: InputBorder.none,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -48,7 +123,7 @@ class ForgotPasswordScreen extends StatelessWidget {
 
                         // Subtítulo
                         const Text(
-                          'Digite seu e-mail e enviaremos um link\npara você redefinir sua senha',
+                          'Informe o e-mail da sua conta e escolha\numa nova senha neste aparelho',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 15,
@@ -58,36 +133,23 @@ class ForgotPasswordScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 36),
 
-                        // Campo E-mail
-                        Container(
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.02),
-                                blurRadius: 10,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: const TextField(
-                            keyboardType: TextInputType.emailAddress,
-                            decoration: InputDecoration(
-                              hintText: 'E-mail',
-                              hintStyle: TextStyle(
-                                color: Colors.black45,
-                                fontSize: 15,
-                              ),
-                              border: InputBorder.none,
-                              contentPadding: EdgeInsets.symmetric(
-                                horizontal: 20,
-                                vertical: 18,
-                              ),
+                        _campo('E-mail', _emailCtrl,
+                            tipo: TextInputType.emailAddress),
+                        _campo('Nova senha', _novaCtrl, senha: true),
+                        _campo('Confirmar nova senha', _confirmaCtrl,
+                            senha: true),
+                        if (_erro != null) ...[
+                          Text(
+                            _erro!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Color(0xFFE53935),
+                              fontSize: 13,
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 20),
+                          const SizedBox(height: 12),
+                        ],
+                        const SizedBox(height: 6),
 
                         // Botão Enviar Link
                         SizedBox(
@@ -101,9 +163,9 @@ class ForgotPasswordScreen extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(16),
                               ),
                             ),
-                            onPressed: () {},
+                            onPressed: _carregando ? null : _redefinir,
                             child: const Text(
-                              'Enviar link',
+                              'Redefinir senha',
                               style: TextStyle(
                                 color: Colors.white,
                                 fontSize: 16,

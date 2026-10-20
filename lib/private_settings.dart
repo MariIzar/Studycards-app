@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'banco_de_dados/auth_helper.dart';
+import 'banco_de_dados/sql_helper.dart';
+
 class PrivacySettingsScreen extends StatefulWidget {
   const PrivacySettingsScreen({super.key});
 
@@ -11,6 +14,20 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
   bool profileVisible = true;
   bool showProgress = true;
   bool usageData = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _carrega();
+  }
+
+  Future<void> _carrega() async {
+    final id = Sessao.usuarioId;
+    if (id == null) return;
+    final u = await SQLHelper.pegaUmUsuario(id);
+    if (!mounted || u.isEmpty) return;
+    setState(() => profileVisible = u.first['is_profile_visible'] == 1);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -149,8 +166,13 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
                   borderRadius: BorderRadius.circular(14),
                 ),
               ),
-              onPressed: () {
-                // Aqui o seu amigo plugará o salvamento das preferências no banco
+              onPressed: () async {
+                final id = Sessao.usuarioId;
+                if (id != null) {
+                  await SQLHelper.atualizaPreferenciasUsuario(id,
+                      perfilVisivel: profileVisible);
+                }
+                if (!context.mounted) return;
                 Navigator.pop(context);
               },
               child: const Text(

@@ -1,7 +1,49 @@
 import 'package:flutter/material.dart';
 
-class EditProfileScreen extends StatelessWidget {
+import 'banco_de_dados/auth_helper.dart';
+
+class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
+
+  @override
+  State<EditProfileScreen> createState() => _EditProfileScreenState();
+}
+
+class _EditProfileScreenState extends State<EditProfileScreen> {
+  final _nomeCtrl = TextEditingController(text: Sessao.nome);
+  final _emailCtrl = TextEditingController(text: Sessao.email);
+  final _ocupacaoCtrl = TextEditingController(text: Sessao.ocupacao);
+  bool _carregando = false;
+  String? _erro;
+
+  @override
+  void dispose() {
+    _nomeCtrl.dispose();
+    _emailCtrl.dispose();
+    _ocupacaoCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _salvar() async {
+    setState(() {
+      _carregando = true;
+      _erro = null;
+    });
+    final r = await AuthHelper.atualizarPerfil(
+      nome: _nomeCtrl.text,
+      email: _emailCtrl.text,
+      ocupacao: _ocupacaoCtrl.text,
+    );
+    if (!mounted) return;
+    if (r.ok) {
+      Navigator.pop(context);
+    } else {
+      setState(() {
+        _carregando = false;
+        _erro = r.erro;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,12 +72,12 @@ class EditProfileScreen extends StatelessWidget {
               Center(
                 child: Stack(
                   children: [
-                    const CircleAvatar(
+                    CircleAvatar(
                       radius: 40,
                       backgroundColor: primaryPurple,
                       child: Text(
-                        'B',
-                        style: TextStyle(
+                        Sessao.inicial,
+                        style: const TextStyle(
                           fontSize: 32,
                           fontWeight: FontWeight.bold,
                           color: Colors.white,
@@ -73,7 +115,7 @@ class EditProfileScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              _buildTextField('Bárbara Urquisa Bambirra Freitas Bernardes'),
+              _buildTextField(_nomeCtrl),
               const SizedBox(height: 20),
               const Text(
                 'E - mail',
@@ -84,7 +126,7 @@ class EditProfileScreen extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               _buildTextField(
-                'barbaraurquisa@gmail.com',
+                _emailCtrl,
                 keyboardType: TextInputType.emailAddress,
               ),
               const SizedBox(height: 20),
@@ -96,7 +138,14 @@ class EditProfileScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              _buildTextField('Engenharia da Computação'),
+              _buildTextField(_ocupacaoCtrl),
+              if (_erro != null) ...[
+                const SizedBox(height: 16),
+                Text(
+                  _erro!,
+                  style: const TextStyle(color: Color(0xFFE53935), fontSize: 13),
+                ),
+              ],
               const SizedBox(height: 40),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
@@ -107,7 +156,7 @@ class EditProfileScreen extends StatelessWidget {
                     borderRadius: BorderRadius.circular(16),
                   ),
                 ),
-                onPressed: () => Navigator.pop(context),
+                onPressed: _carregando ? null : _salvar,
                 child: const Text(
                   'Salvar alterações',
                   style: TextStyle(
@@ -125,7 +174,7 @@ class EditProfileScreen extends StatelessWidget {
   }
 
   Widget _buildTextField(
-    String initialValue, {
+    TextEditingController controller, {
     TextInputType keyboardType = TextInputType.text,
   }) {
     return Container(
@@ -140,8 +189,8 @@ class EditProfileScreen extends StatelessWidget {
           ),
         ],
       ),
-      child: TextFormField(
-        initialValue: initialValue,
+      child: TextField(
+        controller: controller,
         keyboardType: keyboardType,
         decoration: const InputDecoration(
           border: InputBorder.none,

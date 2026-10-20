@@ -564,6 +564,11 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
   // ITEM DE FLASHCARD NA LISTA
   Widget _buildFlashcardItem(Map<String, dynamic> card) {
     final question = card['question']?.toString() ?? '';
+    final acertado = card['is_mastered'] == 1;
+    // errado = já foi revisado e não está acertado (última resposta: Errei)
+    final errado = !acertado && card['last_review'] != null;
+    const verde = Color(0xFF2ECC71);
+    const vermelho = Color(0xFFE53935);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -584,10 +589,25 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: const Color(0xFFF0ECFF),
+              color: acertado
+                  ? const Color(0xFFE6F9EE)
+                  : errado
+                      ? const Color(0xFFFDECEC)
+                      : const Color(0xFFF0ECFF),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.description, color: primaryPurple),
+            child: Icon(
+              acertado
+                  ? Icons.check_circle
+                  : errado
+                      ? Icons.cancel
+                      : Icons.description,
+              color: acertado
+                  ? verde
+                  : errado
+                      ? vermelho
+                      : primaryPurple,
+            ),
           ),
 
           const SizedBox(width: 12),
@@ -600,10 +620,18 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Pergunta',
+                    Text(
+                      acertado
+                          ? 'Pergunta · Acertado'
+                          : errado
+                              ? 'Pergunta · Errado'
+                              : 'Pergunta',
                       style: TextStyle(
-                        color: primaryPurple,
+                        color: acertado
+                            ? verde
+                            : errado
+                                ? vermelho
+                                : primaryPurple,
                         fontWeight: FontWeight.bold,
                         fontSize: 13,
                       ),

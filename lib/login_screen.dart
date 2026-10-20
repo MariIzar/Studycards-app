@@ -1,7 +1,43 @@
 import 'package:flutter/material.dart';
 
-class LoginScreen extends StatelessWidget {
+import 'banco_de_dados/auth_helper.dart';
+
+class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final _emailCtrl = TextEditingController();
+  final _senhaCtrl = TextEditingController();
+  bool _carregando = false;
+  String? _erro;
+
+  @override
+  void dispose() {
+    _emailCtrl.dispose();
+    _senhaCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _entrar() async {
+    setState(() {
+      _carregando = true;
+      _erro = null;
+    });
+    final r = await AuthHelper.entrar(_emailCtrl.text, _senhaCtrl.text);
+    if (!mounted) return;
+    if (r.ok) {
+      Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
+    } else {
+      setState(() {
+        _carregando = false;
+        _erro = r.erro;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -116,7 +152,8 @@ class LoginScreen extends StatelessWidget {
                           ),
                         ],
                       ),
-                      child: const TextField(
+                      child: TextField(
+                        controller: _emailCtrl,
                         keyboardType: TextInputType.emailAddress,
                         decoration: InputDecoration(
                           hintText: 'Seu e-mail',
@@ -147,7 +184,8 @@ class LoginScreen extends StatelessWidget {
                           ),
                         ],
                       ),
-                      child: const TextField(
+                      child: TextField(
+                        controller: _senhaCtrl,
                         obscureText: true,
                         decoration: InputDecoration(
                           hintText: 'Sua senha',
@@ -184,6 +222,18 @@ class LoginScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
 
+                    if (_erro != null) ...[
+                      Text(
+                        _erro!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Color(0xFFE53935),
+                          fontSize: 13,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+
                     // Botão Entrar -> Navega para /home
                     SizedBox(
                       width: double.infinity,
@@ -196,72 +246,11 @@ class LoginScreen extends StatelessWidget {
                             borderRadius: BorderRadius.circular(14),
                           ),
                         ),
-                        onPressed: () {
-                          Navigator.pushReplacementNamed(context, '/home');
-                        },
+                        onPressed: _carregando ? null : _entrar,
                         child: const Text(
                           'Entrar',
                           style: TextStyle(
                             color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    // Divisor "ou continue com"
-                    Row(
-                      children: const [
-                        Expanded(
-                          child: Divider(color: Colors.black26, thickness: 0.8),
-                        ),
-                        Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 12.0),
-                          child: Text(
-                            'ou continue com',
-                            style: TextStyle(
-                              color: Colors.black54,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
-                        Expanded(
-                          child: Divider(color: Colors.black26, thickness: 0.8),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-
-                    // Botão Google
-                    Container(
-                      width: double.infinity,
-                      height: 52,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(14),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.03),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                        onPressed: () {},
-                        child: const Text(
-                          'Google',
-                          style: TextStyle(
-                            color: Colors.black,
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                           ),
