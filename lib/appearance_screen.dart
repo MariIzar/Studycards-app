@@ -1,103 +1,113 @@
 import 'package:flutter/material.dart';
 
-class AppearanceScreen extends StatefulWidget {
+import 'theme_controller.dart';
+
+class AppearanceScreen extends StatelessWidget {
   const AppearanceScreen({super.key});
-
-  @override
-  State<AppearanceScreen> createState() => _AppearanceScreenState();
-}
-
-class _AppearanceScreenState extends State<AppearanceScreen> {
-  bool isLightMode = true;
-  bool isDarkMode = false;
 
   @override
   Widget build(BuildContext context) {
     const primaryPurple = Color(0xFF6C4DFF);
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FE),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text(
-          'Aparência',
-          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
-        ),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          children: [
-            Container(
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: ThemeController.themeMode,
+      builder: (context, temaAtual, child) {
+        final cores = Theme.of(context).colorScheme;
+
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text(
+              'Aparência',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            elevation: 0,
+          ),
+          body: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Container(
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: cores.surface,
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
+                    color: cores.shadow.withValues(alpha: 0.05),
                     blurRadius: 10,
                     offset: const Offset(0, 2),
                   ),
                 ],
               ),
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  SwitchListTile(
-                    secondary: const Icon(
-                      Icons.wb_sunny_outlined,
-                      color: Colors.black87,
-                    ),
+                  RadioListTile<ThemeMode>(
+                    secondary: const Icon(Icons.wb_sunny_outlined),
                     title: const Text(
                       'Claro',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                     subtitle: const Text(
                       'Tema claro para o aplicativo.',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                      style: TextStyle(fontSize: 12),
                     ),
-                    value: isLightMode,
+                    value: ThemeMode.light,
+                    groupValue: temaAtual,
                     activeColor: primaryPurple,
-                    onChanged: (val) {
-                      setState(() {
-                        isLightMode = val;
-                        if (val) isDarkMode = false;
-                      });
+                    onChanged: (valor) {
+                      if (valor != null) {
+                        ThemeController.alterarTema(valor);
+                      }
                     },
                   ),
+
                   const Divider(height: 1),
-                  SwitchListTile(
-                    secondary: const Icon(
-                      Icons.nightlight_outlined,
-                      color: Colors.black87,
-                    ),
+
+                  RadioListTile<ThemeMode>(
+                    secondary: const Icon(Icons.nightlight_outlined),
                     title: const Text(
                       'Escuro',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                     subtitle: const Text(
                       'Tema escuro para o aplicativo.',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                      style: TextStyle(fontSize: 12),
                     ),
-                    value: isDarkMode,
+                    value: ThemeMode.dark,
+                    groupValue: temaAtual,
                     activeColor: primaryPurple,
-                    onChanged: (val) {
-                      setState(() {
-                        isDarkMode = val;
-                        if (val) isLightMode = false;
-                      });
+                    onChanged: (valor) {
+                      if (valor != null) {
+                        ThemeController.alterarTema(valor);
+                      }
+                    },
+                  ),
+
+                  const Divider(height: 1),
+
+                  RadioListTile<ThemeMode>(
+                    secondary: const Icon(Icons.phone_iphone),
+                    title: const Text(
+                      'Automático',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: const Text(
+                      'Seguir a aparência do iPhone.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    value: ThemeMode.system,
+                    groupValue: temaAtual,
+                    activeColor: primaryPurple,
+                    onChanged: (valor) {
+                      if (valor != null) {
+                        ThemeController.alterarTema(valor);
+                      }
                     },
                   ),
                 ],
               ),
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }
