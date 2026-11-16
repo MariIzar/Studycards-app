@@ -1,0 +1,25 @@
+STUDY CARDS - VERSAO SEM PROVAS
+
+O QUE FOI REMOVIDO
+- Gerador de provas por IA.
+- Tela para responder/corrigir provas.
+- Contagem de provas criadas, tentativas e media das provas.
+- Botao e painel "Analisar meu desempenho com IA".
+- Opcoes de escolher quantidade e dificuldade dos flashcards.
+
+O QUE FOI MANTIDO
+- Telas originais de login, home, decks, revisao e progresso.
+- Metricas originais de revisao e dominio dos flashcards.
+- Geracao de exatamente 8 flashcards a partir de texto, imagem ou PDF.
+- Salvamento dos flashcards em um deck existente.
+- Banco SQLite principal original, separado do banco de metadados de materiais.
+
+ANTES DE USAR A IA
+1. Crie backend/.env copiando backend/.env.example.
+2. Coloque sua chave real na variavel GEMINI_API_KEY.
+3. Mantenha GEMINI_MODEL=gemini-3.5-flash-lite.
+4. No terminal dentro de backend: npm install && npm run dev.
+5. Na pasta principal: flutter pub get.
+6. Inicie o app com flutter run.
+
+NAO envie seu backend/.env ou a chave Gemini para ninguem. O arquivo .env nao esta incluido neste ZIP.
