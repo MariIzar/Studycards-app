@@ -46,9 +46,3 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
-
-# Arquivos sensíveis
-backend/.env
-
-# Dependências do Node.js
-backend/node_modules/
