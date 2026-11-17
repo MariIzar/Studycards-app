@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'main.dart' show routeObserver;
 import 'banco_de_dados/auth_helper.dart';
 import 'banco_de_dados/sql_helper.dart';
 
@@ -10,12 +11,11 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with RouteAware {
   static const Color primaryPurple = Color(0xFF6C5CE7);
   static const Color lightPurple = Color(0xFFDCD6FE);
 
   String? selectedDeckTitle;
-
   List<Map<String, dynamic>> decks = [];
 
   bool isLoadingDecks = true;
@@ -32,7 +32,27 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadHomeData();
   }
 
-  // CARREGA DECKS E ESTATÍSTICAS DO SQLITE
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route != null) {
+      routeObserver.unsubscribe(this);
+      routeObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void didPopNext() {
+    _loadHomeData();
+  }
+
+  @override
+  void dispose() {
+    routeObserver.unsubscribe(this);
+    super.dispose();
+  }
+
   Future<void> _loadHomeData() async {
     if (!mounted) return;
 
@@ -41,7 +61,6 @@ class _HomeScreenState extends State<HomeScreen> {
       deckError = null;
     });
 
-    // Visitante: Home vazia, sem consultar o banco.
     if (!Sessao.logado) {
       setState(() {
         decks = [];
@@ -50,7 +69,6 @@ class _HomeScreenState extends State<HomeScreen> {
         masteredCards = 0;
         masteryPercentage = 0;
         isLoadingDecks = false;
-        deckError = null;
       });
       return;
     }
@@ -61,75 +79,50 @@ class _HomeScreenState extends State<HomeScreen> {
         SQLHelper.pegaEstatisticas(usuarioId: Sessao.usuarioId),
       ]);
 
-      final loadedDecks = results[0] as List<Map<String, dynamic>>;
-
-      final stats = results[1] as Map<String, dynamic>;
-
       if (!mounted) return;
+
+      final loadedDecks = results[0] as List<Map<String, dynamic>>;
+      final stats = results[1] as Map<String, dynamic>;
 
       setState(() {
         decks = loadedDecks;
-
         pendingCards = (stats['pending_cards'] as num?)?.toInt() ?? 0;
-
         totalCards = (stats['total_cards'] as num?)?.toInt() ?? 0;
-
         masteredCards = (stats['mastered_cards'] as num?)?.toInt() ?? 0;
-
         masteryPercentage =
             (stats['mastery_percentage'] as num?)?.toDouble() ?? 0;
-
         isLoadingDecks = false;
         deckError = null;
       });
     } catch (e) {
       if (!mounted) return;
-
       setState(() {
         isLoadingDecks = false;
         deckError = 'Não foi possível carregar seus dados.';
       });
-
       debugPrint('Erro ao carregar Home: $e');
     }
   }
 
-  // ABRE UM DECK E ATUALIZA A HOME AO VOLTAR
   Future<void> _openDeck(int id) async {
     await Navigator.pushNamed(context, '/deck-details', arguments: id);
-
-    if (mounted) {
-      await _loadHomeData();
-    }
+    if (mounted) await _loadHomeData();
   }
 
-  // ABRE A LISTA DE DECKS
   Future<void> _openAllDecks() async {
     await Navigator.pushNamed(context, '/decks');
-
-    if (mounted) {
-      await _loadHomeData();
-    }
+    if (mounted) await _loadHomeData();
   }
 
-  // COMEÇA REVISÃO DE TODOS OS CARDS PENDENTES
   Future<void> _startReview() async {
     if (Sessao.logado && pendingCards == 0) return;
-
     await Navigator.pushNamed(context, '/study');
-
-    if (mounted) {
-      await _loadHomeData();
-    }
+    if (mounted) await _loadHomeData();
   }
 
-  // ABRE OUTRAS TELAS E RECARREGA OS DADOS AO VOLTAR
   Future<void> _openRoute(String route) async {
     await Navigator.pushNamed(context, route);
-
-    if (mounted) {
-      await _loadHomeData();
-    }
+    if (mounted) await _loadHomeData();
   }
 
   @override
@@ -147,7 +140,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.all(24),
                   children: [
-                    // CABEÇALHO
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -156,15 +148,17 @@ class _HomeScreenState extends State<HomeScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                Sessao.logado ? 'Olá, ${Sessao.primeiroNome}!' : 'Olá, estudante!',
+                                Sessao.logado
+                                    ? 'Olá, ${Sessao.primeiroNome}!'
+                                    : 'Olá, estudante!',
                                 style: const TextStyle(
                                   fontSize: 22,
                                   fontWeight: FontWeight.bold,
                                   color: Colors.black,
                                 ),
                               ),
-                              SizedBox(height: 2),
-                              Text(
+                              const SizedBox(height: 2),
+                              const Text(
                                 'Pronta para aprender hoje?',
                                 style: TextStyle(
                                   fontSize: 14,
@@ -179,16 +173,13 @@ class _HomeScreenState extends State<HomeScreen> {
                             Icons.help_outline_rounded,
                             size: 28,
                           ),
-                          onPressed: () {
-                            _openRoute('/about');
-                          },
+                          onPressed: () => _openRoute('/about'),
                         ),
                       ],
                     ),
 
                     const SizedBox(height: 24),
 
-                    // REVISÃO DE HOJE
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(20),
@@ -214,9 +205,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-
                           const SizedBox(height: 8),
-
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.baseline,
                             textBaseline: TextBaseline.alphabetic,
@@ -241,9 +230,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ],
                           ),
-
                           const SizedBox(height: 12),
-
                           Text(
                             isLoadingDecks
                                 ? 'Carregando revisões...'
@@ -255,9 +242,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               fontSize: 13,
                             ),
                           ),
-
                           const SizedBox(height: 16),
-
                           ElevatedButton.icon(
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.white,
@@ -298,7 +283,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
                     const SizedBox(height: 28),
 
-                    // TÍTULO DOS DECKS
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -322,7 +306,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
                     const SizedBox(height: 8),
 
-                    // LISTA DE DECKS
                     if (isLoadingDecks)
                       const Padding(
                         padding: EdgeInsets.all(24),
@@ -355,23 +338,18 @@ class _HomeScreenState extends State<HomeScreen> {
                         final int colorValue =
                             (deck['color'] as num?)?.toInt() ?? 0xFF6C4DFF;
 
-                        final Color deckColor = Color(colorValue);
-
                         return _buildInteractiveDeckCard(
                           title: deck['title']?.toString() ?? 'Sem nome',
                           cardsCount: '$count ${count == 1 ? 'card' : 'cards'}',
-                          deckColor: deckColor,
+                          deckColor: Color(colorValue),
                           onTap: () => _openDeck(id),
                         );
                       }),
 
                     const SizedBox(height: 20),
 
-                    // CARD DE PROGRESSO REAL
                     GestureDetector(
-                      onTap: () {
-                        _openRoute('/progress');
-                      },
+                      onTap: () => _openRoute('/progress'),
                       child: Container(
                         width: double.infinity,
                         padding: const EdgeInsets.all(20),
@@ -390,9 +368,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 color: Colors.black87,
                               ),
                             ),
-
                             const SizedBox(height: 8),
-
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.baseline,
                               textBaseline: TextBaseline.alphabetic,
@@ -419,9 +395,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                               ],
                             ),
-
                             const SizedBox(height: 12),
-
                             ClipRRect(
                               borderRadius: BorderRadius.circular(10),
                               child: LinearProgressIndicator(
@@ -436,9 +410,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                               ),
                             ),
-
                             const SizedBox(height: 10),
-
                             Text(
                               '$masteredCards de $totalCards cards dominados',
                               style: const TextStyle(
@@ -457,7 +429,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
-            // BARRA INFERIOR
             Container(
               padding: const EdgeInsets.symmetric(vertical: 10),
               decoration: const BoxDecoration(
@@ -474,16 +445,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
                   _buildNavItem(Icons.home, 'Início', active: true),
-
                   GestureDetector(
                     onTap: _openAllDecks,
                     child: _buildNavItem(Icons.style_outlined, 'Decks'),
                   ),
-
                   GestureDetector(
-                    onTap: () {
-                      _openRoute('/create-flashcards');
-                    },
+                    onTap: () => _openRoute('/create-flashcards'),
                     child: Container(
                       width: 54,
                       height: 54,
@@ -498,18 +465,12 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   ),
-
                   GestureDetector(
-                    onTap: () {
-                      _openRoute('/progress');
-                    },
+                    onTap: () => _openRoute('/progress'),
                     child: _buildNavItem(Icons.bar_chart_outlined, 'Progresso'),
                   ),
-
                   GestureDetector(
-                    onTap: () {
-                      _openRoute('/profile');
-                    },
+                    onTap: () => _openRoute('/profile'),
                     child: _buildNavItem(Icons.person_outline, 'Perfil'),
                   ),
                 ],
@@ -521,7 +482,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // CARD COLORIDO DE DECK
   Widget _buildInteractiveDeckCard({
     required String title,
     required String cardsCount,
@@ -535,7 +495,6 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           selectedDeckTitle = isSelected ? null : title;
         });
-
         onTap?.call();
       },
       child: AnimatedContainer(
@@ -568,9 +527,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               child: const Icon(Icons.style, color: Colors.white, size: 24),
             ),
-
             const SizedBox(width: 12),
-
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -591,7 +548,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-
             Icon(Icons.chevron_right, color: deckColor, size: 22),
           ],
         ),
@@ -599,7 +555,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ITEM DA BARRA INFERIOR
   Widget _buildNavItem(IconData icon, String label, {bool active = false}) {
     final Color color = active ? primaryPurple : Colors.grey;
 

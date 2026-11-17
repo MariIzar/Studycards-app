@@ -38,6 +38,10 @@ import 'appearance_screen.dart';
 import 'lenguage_screen.dart';
 import 'help_support.dart';
 
+// Avisa as telas quando voltam a ficar visíveis.
+final RouteObserver<ModalRoute<dynamic>> routeObserver =
+    RouteObserver<ModalRoute<dynamic>>();
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -61,6 +65,7 @@ class StudyCardsApp extends StatelessWidget {
         return MaterialApp(
           title: 'StudyCards',
           debugShowCheckedModeBanner: false,
+          navigatorObservers: [routeObserver],
 
           // Tema selecionado pelo usuário
           themeMode: modoAtual,
