@@ -11,16 +11,12 @@ class ForgotPasswordScreen extends StatefulWidget {
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _emailCtrl = TextEditingController();
-  final _novaCtrl = TextEditingController();
-  final _confirmaCtrl = TextEditingController();
   bool _carregando = false;
   String? _erro;
 
   @override
   void dispose() {
     _emailCtrl.dispose();
-    _novaCtrl.dispose();
-    _confirmaCtrl.dispose();
     super.dispose();
   }
 
@@ -29,15 +25,14 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       _carregando = true;
       _erro = null;
     });
-    final r = await AuthHelper.redefinirSenha(
-      email: _emailCtrl.text,
-      nova: _novaCtrl.text,
-      confirmacao: _confirmaCtrl.text,
-    );
+    final r = await AuthHelper.enviarRedefinicaoSenha(_emailCtrl.text);
     if (!mounted) return;
     if (r.ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Senha redefinida! Entre com a nova senha.')),
+        const SnackBar(
+          content: Text(
+              'Se existir uma conta com este e-mail, enviamos um link para redefinir a senha.'),
+        ),
       );
       Navigator.pop(context);
     } else {
@@ -123,7 +118,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
                         // Subtítulo
                         const Text(
-                          'Informe o e-mail da sua conta e escolha\numa nova senha neste aparelho',
+                          'Informe o e-mail da sua conta e enviaremos\num link para criar uma nova senha',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 15,
@@ -135,9 +130,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
                         _campo('E-mail', _emailCtrl,
                             tipo: TextInputType.emailAddress),
-                        _campo('Nova senha', _novaCtrl, senha: true),
-                        _campo('Confirmar nova senha', _confirmaCtrl,
-                            senha: true),
                         if (_erro != null) ...[
                           Text(
                             _erro!,
@@ -165,7 +157,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                             ),
                             onPressed: _carregando ? null : _redefinir,
                             child: const Text(
-                              'Redefinir senha',
+                              'Enviar link',
                               style: TextStyle(
                                 color: Colors.white,
                                 fontSize: 16,

@@ -5,6 +5,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:study_cards/banco_de_dados/auth_helper.dart';
 import 'package:study_cards/banco_de_dados/repeticao_espacada.dart';
 import 'package:study_cards/banco_de_dados/sql_helper.dart';
+import 'fake_nuvem.dart';
 import 'package:study_cards/main.dart';
 
 Future<void> espera(WidgetTester t) async {
@@ -29,6 +30,7 @@ void main() {
     t.view.physicalSize = const Size(1080, 2400);
     t.view.devicePixelRatio = 2.75;
     addTearDown(t.view.reset);
+    AuthHelper.nuvem = FakeNuvemAuth();
     SharedPreferences.setMockInitialValues({});
     late int deckId;
     await t.runAsync(() async {
@@ -91,6 +93,7 @@ void main() {
     t.view.physicalSize = const Size(1080, 2400);
     t.view.devicePixelRatio = 2.75;
     addTearDown(t.view.reset);
+    AuthHelper.nuvem = FakeNuvemAuth();
     SharedPreferences.setMockInitialValues({});
     late int deckId;
     await t.runAsync(() async {
@@ -134,6 +137,7 @@ void main() {
     t.view.physicalSize = const Size(1080, 2400);
     t.view.devicePixelRatio = 2.75;
     addTearDown(t.view.reset);
+    AuthHelper.nuvem = FakeNuvemAuth();
     SharedPreferences.setMockInitialValues({});
     late int deckId;
     await t.runAsync(() async {

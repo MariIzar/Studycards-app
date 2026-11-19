@@ -1,6 +1,9 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import 'banco_de_dados/auth_helper.dart';
+import 'services/nuvem_dados.dart';
+import 'services/sync_service.dart';
 import 'requer_login.dart';
 import 'theme_controller.dart';
 
@@ -45,8 +48,16 @@ final RouteObserver<ModalRoute<dynamic>> routeObserver =
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Firebase: usado somente para o login com Google (config vem do
+  // google-services.json no Android). Se falhar, o app segue com login local.
+  try {
+    await Firebase.initializeApp();
+    SyncService.nuvem = FirestoreNuvemDados(); // backup/sincronização na nuvem
+  } catch (_) {}
+
   // Recupera a sessão do usuário
   await Sessao.carrega();
+  SyncService.iniciar(); // se já estava logado, sincroniza ao abrir o app
 
   // Recupera o tema escolhido anteriormente
   await ThemeController.carregarTema();
