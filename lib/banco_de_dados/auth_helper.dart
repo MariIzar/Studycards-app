@@ -14,6 +14,8 @@ import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 
+import '../services/nuvem_auth.dart';
+import '../services/sync_service.dart';
 import 'preferencias_helper.dart';
 import 'sql_helper.dart';
 
@@ -78,6 +80,9 @@ class Sessao {
 }
 
 class AuthHelper {
+  /// Conta na nuvem (Firebase). Nos testes é trocada por uma versão falsa.
+  static NuvemAuth nuvem = FirebaseNuvemAuth();
+
   static const int _iteracoes = 10000;
 
   // ---------------------------------------------------------------------------
@@ -135,6 +140,31 @@ class AuthHelper {
   // ---------------------------------------------------------------------------
   // CADASTRO / LOGIN / LOGOUT
   // ---------------------------------------------------------------------------
+  static String _msgNuvem(NuvemErro e) {
+    switch (e.falha) {
+      case NuvemFalha.emailEmUso:
+        return 'Já existe uma conta com este e-mail.';
+      case NuvemFalha.credencialInvalida:
+        return 'E-mail ou senha incorretos.';
+      case NuvemFalha.semConexao:
+        return 'Sem conexão com a internet. Tente novamente.';
+      case NuvemFalha.senhaFraca:
+        return 'Senha muito fraca. Use uma senha mais forte.';
+      case NuvemFalha.muitasTentativas:
+        return 'Muitas tentativas. Aguarde um pouco e tente de novo.';
+      case NuvemFalha.outro:
+        return 'Não foi possível falar com o servidor. Tente novamente.';
+    }
+  }
+
+  /// O 1º usuário do aparelho herda decks criados antes do login existir.
+  static Future<void> _adotaDecksSeForOPrimeiro(int id) async {
+    final total = (await (await SQLHelper.db())
+            .rawQuery('SELECT COUNT(*) AS c FROM users'))
+        .first['c'] as int;
+    if (total == 1) await SQLHelper.adotaDecksSemDono(id);
+  }
+
   static Future<AuthResultado> cadastrar({
     required String nome,
     required String email,
@@ -156,18 +186,24 @@ class AuthHelper {
       return const AuthResultado.falha('Já existe uma conta com este e-mail.');
     }
 
+    // 1) cria a conta na nuvem (Firebase)
+    final NuvemUsuario nuv;
+    try {
+      nuv = await nuvem.criaConta(emailNorm, senha, nome: nomeLimpo);
+    } on NuvemErro catch (e) {
+      return AuthResultado.falha(_msgNuvem(e));
+    }
+
+    // 2) cria o perfil local (guardamos hash+sal só para entrar sem internet)
     final sal = geraSal();
     final id = await SQLHelper.inserePerfilLocal(
       nome: nomeLimpo,
       email: emailNorm,
       hash: geraHash(senha, sal),
       sal: sal,
+      firebaseUid: nuv.uid,
     );
-    // Se já havia decks antes do login existir, o primeiro usuário fica com eles
-    final total = (await (await SQLHelper.db()).rawQuery(
-            'SELECT COUNT(*) AS c FROM users'))
-        .first['c'] as int;
-    if (total == 1) await SQLHelper.adotaDecksSemDono(id);
+    await _adotaDecksSeForOPrimeiro(id);
 
     await _abreSessao(id);
     return const AuthResultado.sucesso();
@@ -179,23 +215,119 @@ class AuthHelper {
       return const AuthResultado.falha('Preencha e-mail e senha.');
     }
     final dados = await SQLHelper.pegaUsuarioPorEmail(emailNorm);
-    if (dados.isEmpty) {
-      return const AuthResultado.falha('E-mail ou senha incorretos.');
+    final Map<String, dynamic>? local = dados.isEmpty ? null : dados.first;
+    final localConfere = local != null &&
+        _confere(senha, local['password_hash'] as String?,
+            local['password_salt'] as String?);
+    final semUid = local == null || (local['firebase_uid'] ?? '').toString().isEmpty;
+
+    try {
+      // Caminho normal: entra pela nuvem (Firebase)
+      final nuv = await nuvem.entra(emailNorm, senha);
+      final id = await _garanteLocal(emailNorm, senha, nuv, local);
+      await _abreSessao(id);
+      return const AuthResultado.sucesso();
+    } on NuvemErro catch (e) {
+      // Conta antiga, criada só no aparelho: sobe para a nuvem agora
+      if (e.falha == NuvemFalha.credencialInvalida && localConfere && semUid) {
+        try {
+          final nuv = await nuvem.criaConta(emailNorm, senha,
+              nome: local['name'] as String?);
+          final id = (local['id'] as num).toInt();
+          await SQLHelper.atualizaFirebaseUid(id, nuv.uid);
+          await _abreSessao(id);
+          return const AuthResultado.sucesso();
+        } on NuvemErro catch (e2) {
+          if (e2.falha == NuvemFalha.emailEmUso) {
+            return const AuthResultado.falha('E-mail ou senha incorretos.');
+          }
+          return AuthResultado.falha(_msgNuvem(e2));
+        }
+      }
+      // Sem internet: quem já tem conta neste aparelho consegue entrar
+      if (e.falha == NuvemFalha.semConexao && localConfere) {
+        await _abreSessao((local['id'] as num).toInt());
+        return const AuthResultado.sucesso();
+      }
+      return AuthResultado.falha(_msgNuvem(e));
     }
-    final u = dados.first;
-    if (u['password_hash'] == null) {
+  }
+
+  /// Garante o perfil local de quem entrou pela nuvem (ex.: 1º login neste
+  /// aparelho) e mantém uid e hash locais em dia.
+  static Future<int> _garanteLocal(String emailNorm, String senha,
+      NuvemUsuario nuv, Map<String, dynamic>? local) async {
+    final sal = geraSal();
+    final hash = geraHash(senha, sal);
+    if (local != null) {
+      final id = (local['id'] as num).toInt();
+      await SQLHelper.atualizaFirebaseUid(id, nuv.uid);
+      await SQLHelper.atualizaSenhaUsuario(id, hash, sal);
+      return id;
+    }
+    final nome = (nuv.nome ?? '').trim();
+    final id = await SQLHelper.inserePerfilLocal(
+      nome: nome.isEmpty ? emailNorm.split('@').first : nome,
+      email: emailNorm,
+      hash: hash,
+      sal: sal,
+      firebaseUid: nuv.uid,
+    );
+    await _adotaDecksSeForOPrimeiro(id);
+    return id;
+  }
+
+  /// Login/cadastro com Google. Os dados vêm do Firebase (já verificados pelo
+  /// Google). Se já existe conta local com o mesmo e-mail, ela é reaproveitada
+  /// e ligada ao Google; senão, uma conta nova (sem senha) é criada.
+  static Future<AuthResultado> entrarComGoogle({
+    required String nome,
+    required String email,
+    required String googleId,
+    String? fotoUrl,
+    String? firebaseUid,
+  }) async {
+    final emailNorm = normalizaEmail(email);
+    if (!emailValido(emailNorm) || googleId.isEmpty) {
       return const AuthResultado.falha(
-          'Esta conta ainda não tem senha. Use "Esqueceu sua senha?" para criar uma.');
+          'Não foi possível obter os dados da conta Google.');
     }
-    if (!_confere(senha, u['password_hash'] as String?,
-        u['password_salt'] as String?)) {
-      return const AuthResultado.falha('E-mail ou senha incorretos.');
+
+    final existentes = await SQLHelper.pegaUsuarioPorEmail(emailNorm);
+    final int id;
+    if (existentes.isNotEmpty) {
+      final u = existentes.first;
+      id = (u['id'] as num).toInt();
+      final atual = (u['google_id'] ?? '').toString();
+      if (atual.isNotEmpty && atual != googleId) {
+        return const AuthResultado.falha(
+            'Este e-mail já está ligado a outra conta Google.');
+      }
+      if (atual != googleId) {
+        await SQLHelper.vinculaGoogleAoUsuario(id, googleId, fotoUrl);
+      }
+      if (firebaseUid != null && firebaseUid.isNotEmpty) {
+        await SQLHelper.atualizaFirebaseUid(id, firebaseUid);
+      }
+    } else {
+      final nomeLimpo = nome.trim();
+      id = await SQLHelper.insereUsuarioGoogle(
+        nome: nomeLimpo.isEmpty ? emailNorm.split('@').first : nomeLimpo,
+        email: emailNorm,
+        googleId: googleId,
+        fotoUrl: fotoUrl,
+        firebaseUid: firebaseUid,
+      );
+      await _adotaDecksSeForOPrimeiro(id);
     }
-    await _abreSessao((u['id'] as num).toInt());
+
+    await _abreSessao(id);
     return const AuthResultado.sucesso();
   }
 
   static Future<void> sair() async {
+    await SyncService.parar();
+    await nuvem.sai();
     await PreferenciasHelper.removeUsuarioLogado();
     Sessao._limpa();
   }
@@ -203,6 +335,7 @@ class AuthHelper {
   static Future<void> _abreSessao(int id) async {
     await PreferenciasHelper.salvaUsuarioLogado(id);
     await Sessao.carrega();
+    await SyncService.iniciar(); // sincroniza com a nuvem (se houver)
   }
 
   // ---------------------------------------------------------------------------
@@ -216,6 +349,10 @@ class AuthHelper {
     final id = Sessao.usuarioId;
     if (id == null) return const AuthResultado.falha('Você não está logado.');
     final u = (await SQLHelper.pegaUmUsuario(id)).first;
+    if (u['password_hash'] == null) {
+      return const AuthResultado.falha(
+          'Esta conta entra pelo Google e não tem senha para trocar.');
+    }
     if (!_confere(atual, u['password_hash'] as String?,
         u['password_salt'] as String?)) {
       return const AuthResultado.falha('Senha atual incorreta.');
@@ -225,35 +362,41 @@ class AuthHelper {
     if (nova != confirmacao) {
       return const AuthResultado.falha('As senhas não conferem.');
     }
+    // Troca na nuvem primeiro: é ela que vale para entrar em outros aparelhos
+    if ((u['firebase_uid'] ?? '').toString().isNotEmpty) {
+      try {
+        await nuvem.alteraSenha(atual, nova);
+      } on NuvemErro catch (e) {
+        if (e.falha == NuvemFalha.credencialInvalida) {
+          return const AuthResultado.falha('Senha atual incorreta.');
+        }
+        return AuthResultado.falha(_msgNuvem(e));
+      }
+    }
     final sal = geraSal();
     await SQLHelper.atualizaSenhaUsuario(id, geraHash(nova, sal), sal);
     return const AuthResultado.sucesso();
   }
 
-  /// "Esqueci a senha" local: redefine pelo e-mail cadastrado, neste aparelho.
-  static Future<AuthResultado> redefinirSenha({
-    required String email,
-    required String nova,
-    required String confirmacao,
-  }) async {
-    final dados = await SQLHelper.pegaUsuarioPorEmail(normalizaEmail(email));
-    if (dados.isEmpty) {
-      return const AuthResultado.falha('Nenhuma conta com este e-mail.');
+  /// "Esqueci a senha": o Firebase envia um e-mail com o link de redefinição.
+  /// Por segurança, a resposta é a mesma exista ou não conta com o e-mail.
+  static Future<AuthResultado> enviarRedefinicaoSenha(String email) async {
+    final emailNorm = normalizaEmail(email);
+    if (!emailValido(emailNorm)) {
+      return const AuthResultado.falha('E-mail inválido.');
     }
-    final erro = validaSenha(nova);
-    if (erro != null) return AuthResultado.falha(erro);
-    if (nova != confirmacao) {
-      return const AuthResultado.falha('As senhas não conferem.');
+    try {
+      await nuvem.enviaRedefinicao(emailNorm);
+    } on NuvemErro catch (e) {
+      if (e.falha == NuvemFalha.credencialInvalida) {
+        // e-mail sem conta: não revelamos
+        return const AuthResultado.sucesso();
+      }
+      return AuthResultado.falha(_msgNuvem(e));
     }
-    final sal = geraSal();
-    await SQLHelper.atualizaSenhaUsuario(
-        (dados.first['id'] as num).toInt(), geraHash(nova, sal), sal);
     return const AuthResultado.sucesso();
   }
 
-  // ---------------------------------------------------------------------------
-  // PERFIL
-  // ---------------------------------------------------------------------------
   static Future<AuthResultado> atualizarPerfil({
     required String nome,
     required String email,

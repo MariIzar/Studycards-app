@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart' as sql;
@@ -6,7 +8,31 @@ import 'repeticao_espacada.dart';
 
 class SQLHelper {
   static const String _nomeBanco = 'studycards.db';
-  static const int _versaoBanco = 3;
+  static const int _versaoBanco = 5;
+
+  /// Chamado depois de qualquer escrita feita pelo usuário (o serviço de
+  /// sincronização usa isso para enviar as mudanças à nuvem).
+  static void Function()? aoMudarDados;
+
+  static void _avisa() {
+    try {
+      aoMudarDados?.call();
+    } catch (_) {}
+  }
+
+  /// Identificador único (v4) usado para ligar o mesmo item em vários aparelhos.
+  static String novoUuid() {
+    final r = Random.secure();
+    final b = List<int>.generate(16, (_) => r.nextInt(256));
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    final h = b.map((e) => e.toRadixString(16).padLeft(2, '0')).join();
+    return '${h.substring(0, 8)}-${h.substring(8, 12)}-${h.substring(12, 16)}-'
+        '${h.substring(16, 20)}-${h.substring(20)}';
+  }
+
+  /// Data/hora em UTC (ISO 8601) usada para decidir qual versão é mais nova.
+  static String agoraUtc() => DateTime.now().toUtc().toIso8601String();
 
   static sql.Database? _banco;
 
@@ -23,6 +49,7 @@ class SQLHelper {
         notify_study_reminder INTEGER NOT NULL DEFAULT 1,
         password_hash TEXT,
         password_salt TEXT,
+        firebase_uid TEXT,
         createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
     """);
@@ -34,6 +61,9 @@ class SQLHelper {
         title TEXT NOT NULL,
         description TEXT,
         color INTEGER NOT NULL DEFAULT 4285287935,
+        uuid TEXT,
+        updated_at TEXT,
+        sync_pendente INTEGER NOT NULL DEFAULT 1,
         createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
@@ -51,6 +81,9 @@ class SQLHelper {
         repetitions INTEGER NOT NULL DEFAULT 0,
         next_review TEXT NOT NULL,
         last_review TEXT,
+        uuid TEXT,
+        updated_at TEXT,
+        sync_pendente INTEGER NOT NULL DEFAULT 1,
         createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (deck_id) REFERENCES decks(id) ON DELETE CASCADE
       )
@@ -62,10 +95,14 @@ class SQLHelper {
         flashcard_id INTEGER NOT NULL,
         quality INTEGER NOT NULL,
         reviewed_at TEXT NOT NULL,
+        uuid TEXT,
+        sync_pendente INTEGER NOT NULL DEFAULT 1,
         FOREIGN KEY (flashcard_id) REFERENCES flashcards(id)
           ON DELETE CASCADE
       )
     """);
+
+    await _criaTabelasSync(database);
 
     await database.execute(
       'CREATE INDEX idx_flashcards_deck ON flashcards(deck_id)',
@@ -75,6 +112,67 @@ class SQLHelper {
       'CREATE INDEX idx_flashcards_next_review '
       'ON flashcards(next_review)',
     );
+  }
+
+  /// Tabelas auxiliares da sincronização: itens apagados (para avisar a
+  /// nuvem) e metadados (ex.: até quando já baixamos).
+  static Future<void> _criaTabelasSync(sql.Database database) async {
+    await database.execute("""
+      CREATE TABLE IF NOT EXISTS sync_apagados(
+        uuid TEXT NOT NULL,
+        tipo TEXT NOT NULL,
+        user_id INTEGER NOT NULL,
+        apagado_em TEXT NOT NULL,
+        PRIMARY KEY (uuid, tipo)
+      )
+    """);
+    await database.execute("""
+      CREATE TABLE IF NOT EXISTS sync_meta(
+        chave TEXT PRIMARY KEY NOT NULL,
+        valor TEXT
+      )
+    """);
+    await database.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_decks_uuid ON decks(uuid)',
+    );
+    await database.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_flashcards_uuid '
+      'ON flashcards(uuid)',
+    );
+    await database.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_revisoes_uuid ON revisoes(uuid)',
+    );
+  }
+
+  static Future<void> _migraParaSync(sql.Database database) async {
+    for (final t in ['decks', 'flashcards']) {
+      await database.execute('ALTER TABLE $t ADD COLUMN uuid TEXT');
+      await database.execute('ALTER TABLE $t ADD COLUMN updated_at TEXT');
+      await database.execute(
+        'ALTER TABLE $t ADD COLUMN sync_pendente INTEGER NOT NULL DEFAULT 1',
+      );
+    }
+    await database.execute('ALTER TABLE revisoes ADD COLUMN uuid TEXT');
+    await database.execute(
+      'ALTER TABLE revisoes ADD COLUMN sync_pendente INTEGER NOT NULL DEFAULT 1',
+    );
+    // dados que já existiam ganham um id único e entram na fila de envio
+    final agora = agoraUtc();
+    for (final t in ['decks', 'flashcards', 'revisoes']) {
+      final linhas = await database.query(t, columns: ['id']);
+      for (final l in linhas) {
+        await database.update(
+          t,
+          {
+            'uuid': novoUuid(),
+            if (t != 'revisoes') 'updated_at': agora,
+          },
+          where: 'id = ?',
+          whereArgs: [l['id']],
+        );
+      }
+    }
+    await _criaTabelasSync(database);
   }
 
   static Future<sql.Database> db() async {
@@ -105,6 +203,13 @@ class SQLHelper {
           // Login local: senha guardada como hash + sal (nunca em texto puro)
           await database.execute('ALTER TABLE users ADD COLUMN password_hash TEXT');
           await database.execute('ALTER TABLE users ADD COLUMN password_salt TEXT');
+        }
+        if (oldVersion < 4) {
+          // Conta na nuvem (Firebase): liga o usuário local ao uid do Firebase
+          await database.execute('ALTER TABLE users ADD COLUMN firebase_uid TEXT');
+        }
+        if (oldVersion < 5) {
+          await _migraParaSync(database);
         }
       },
     );
@@ -225,12 +330,17 @@ class SQLHelper {
   }) async {
     final database = await db();
 
-    return database.insert('decks', {
+    final id = await database.insert('decks', {
       'title': titulo,
       'description': descricao,
       'user_id': usuarioId,
       'color': cor,
+      'uuid': novoUuid(),
+      'updated_at': agoraUtc(),
+      'sync_pendente': 1,
     }, conflictAlgorithm: sql.ConflictAlgorithm.replace);
+    _avisa();
+    return id;
   }
 
   static Future<List<Map<String, dynamic>>> pegaDecks({int? usuarioId}) async {
@@ -278,23 +388,60 @@ class SQLHelper {
     final Map<String, dynamic> dados = {
       'title': titulo,
       'description': descricao,
+      'updated_at': agoraUtc(),
+      'sync_pendente': 1,
     };
 
     if (cor != null) {
       dados['color'] = cor;
     }
 
-    return database.update('decks', dados, where: 'id = ?', whereArgs: [id]);
+    final n = await database
+        .update('decks', dados, where: 'id = ?', whereArgs: [id]);
+    _avisa();
+    return n;
   }
 
   static Future<void> apagaDeck(int id) async {
     final database = await db();
 
     try {
-      await database.delete('decks', where: 'id = ?', whereArgs: [id]);
+      final deck = await database.query('decks',
+          where: 'id = ?', whereArgs: [id], limit: 1);
+      if (deck.isNotEmpty) {
+        final d = deck.first;
+        final cards = await database.query('flashcards',
+            columns: ['uuid'], where: 'deck_id = ?', whereArgs: [id]);
+        final dono = d['user_id'];
+        await database.transaction((txn) async {
+          if (dono != null) {
+            for (final c in cards) {
+              await _marcaApagado(txn, c['uuid'], 'cards', dono);
+            }
+            await _marcaApagado(txn, d['uuid'], 'decks', dono);
+          }
+          await txn.delete('decks', where: 'id = ?', whereArgs: [id]);
+        });
+        _avisa();
+      }
     } catch (e) {
       debugPrint('Erro ao apagar deck: $e');
     }
+  }
+
+  static Future<void> _marcaApagado(
+    sql.DatabaseExecutor ex,
+    Object? uuid,
+    String tipo,
+    Object? userId,
+  ) async {
+    if (uuid == null || userId == null) return;
+    await ex.insert('sync_apagados', {
+      'uuid': uuid,
+      'tipo': tipo,
+      'user_id': userId,
+      'apagado_em': agoraUtc(),
+    }, conflictAlgorithm: sql.ConflictAlgorithm.replace);
   }
 
   // FLASHCARDS
@@ -306,12 +453,17 @@ class SQLHelper {
   ) async {
     final database = await db();
 
-    return database.insert('flashcards', {
+    final id = await database.insert('flashcards', {
       'deck_id': deckId,
       'question': pergunta,
       'answer': resposta,
       'next_review': _agora(),
+      'uuid': novoUuid(),
+      'updated_at': agoraUtc(),
+      'sync_pendente': 1,
     }, conflictAlgorithm: sql.ConflictAlgorithm.replace);
+    _avisa();
+    return id;
   }
 
   static Future<void> adicionaFlashcardsEmLote(
@@ -330,11 +482,15 @@ class SQLHelper {
           'question': card['question'] ?? '',
           'answer': card['answer'] ?? '',
           'next_review': agora,
+          'uuid': novoUuid(),
+          'updated_at': agoraUtc(),
+          'sync_pendente': 1,
         });
       }
 
       await lote.commit(noResult: true);
     });
+    _avisa();
   }
 
   static Future<List<Map<String, dynamic>>> pegaFlashcardsDoDeck(
@@ -393,7 +549,11 @@ class SQLHelper {
     final database = await db();
     return database.update(
       'decks',
-      {'user_id': usuarioId},
+      {
+        'user_id': usuarioId,
+        'updated_at': agoraUtc(),
+        'sync_pendente': 1,
+      },
       where: 'user_id IS NULL',
     );
   }
@@ -404,6 +564,7 @@ class SQLHelper {
     required String email,
     required String hash,
     required String sal,
+    String? firebaseUid,
   }) async {
     final database = await db();
     return database.insert('users', {
@@ -411,7 +572,49 @@ class SQLHelper {
       'email': email,
       'password_hash': hash,
       'password_salt': sal,
+      'firebase_uid': firebaseUid,
     }, conflictAlgorithm: sql.ConflictAlgorithm.abort);
+  }
+
+  /// Cadastro via Google: conta sem senha local, ligada ao id do Google.
+  static Future<int> insereUsuarioGoogle({
+    required String nome,
+    required String email,
+    required String googleId,
+    String? fotoUrl,
+    String? firebaseUid,
+  }) async {
+    final database = await db();
+    return database.insert('users', {
+      'name': nome,
+      'email': email,
+      'google_id': googleId,
+      'photo_url': fotoUrl,
+      'firebase_uid': firebaseUid,
+    }, conflictAlgorithm: sql.ConflictAlgorithm.abort);
+  }
+
+  /// Guarda o uid do Firebase de um usuário local.
+  static Future<int> atualizaFirebaseUid(int id, String uid) async {
+    final database = await db();
+    return database.update(
+      'users',
+      {'firebase_uid': uid},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// Liga uma conta local já existente (mesmo e-mail) ao id do Google.
+  static Future<int> vinculaGoogleAoUsuario(
+      int id, String googleId, String? fotoUrl) async {
+    final database = await db();
+    return database.update(
+      'users',
+      {'google_id': googleId, 'photo_url': fotoUrl},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   static Future<int> atualizaSenhaUsuario(
@@ -455,19 +658,37 @@ class SQLHelper {
   ) async {
     final database = await db();
 
-    return database.update(
+    final n = await database.update(
       'flashcards',
-      {'question': pergunta, 'answer': resposta},
+      {
+        'question': pergunta,
+        'answer': resposta,
+        'updated_at': agoraUtc(),
+        'sync_pendente': 1,
+      },
       where: 'id = ?',
       whereArgs: [id],
     );
+    _avisa();
+    return n;
   }
 
   static Future<void> apagaFlashcard(int id) async {
     final database = await db();
 
     try {
-      await database.delete('flashcards', where: 'id = ?', whereArgs: [id]);
+      final c = await database.rawQuery(
+        'SELECT f.uuid AS uuid, d.user_id AS user_id FROM flashcards f '
+        'JOIN decks d ON d.id = f.deck_id WHERE f.id = ?',
+        [id],
+      );
+      await database.transaction((txn) async {
+        if (c.isNotEmpty) {
+          await _marcaApagado(txn, c.first['uuid'], 'cards', c.first['user_id']);
+        }
+        await txn.delete('flashcards', where: 'id = ?', whereArgs: [id]);
+      });
+      _avisa();
     } catch (e) {
       debugPrint('Erro ao apagar flashcard: $e');
     }
@@ -508,6 +729,8 @@ class SQLHelper {
           'next_review': novo.proximaRevisao(agora).toIso8601String(),
           'last_review': agora.toIso8601String(),
           'is_mastered': novo.dominado ? 1 : 0,
+          'updated_at': agoraUtc(),
+          'sync_pendente': 1,
         },
         where: 'id = ?',
         whereArgs: [flashcardId],
@@ -517,8 +740,11 @@ class SQLHelper {
         'flashcard_id': flashcardId,
         'quality': avaliacao.qualidade,
         'reviewed_at': agora.toIso8601String(),
+        'uuid': novoUuid(),
+        'sync_pendente': 1,
       });
     });
+    _avisa();
 
     return novo.intervaloDias;
   }

@@ -106,7 +106,8 @@ const FLASHCARDS_SCHEMA = {
 async function readEntirePdf(file) {
   console.log('[PDF] Iniciando leitura completa...');
 
-  const pdf = await pdfParse(file.buffer);
+  // Uint8Array puro: o pdf-parse falha com "bad XRef entry" em Buffer (Node novo)
+  const pdf = await pdfParse(new Uint8Array(file.buffer));
 
   const text = String(pdf.text || '')
     .replace(/\r/g, '\n')

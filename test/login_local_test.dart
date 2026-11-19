@@ -8,12 +8,18 @@ import 'package:study_cards/banco_de_dados/preferencias_helper.dart';
 import 'package:study_cards/banco_de_dados/repeticao_espacada.dart';
 import 'package:study_cards/banco_de_dados/sql_helper.dart';
 
+import 'fake_nuvem.dart';
+
 void main() {
   sqfliteFfiInit();
   databaseFactory = databaseFactoryFfi;
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  late FakeNuvemAuth nuvem;
+
   setUp(() async {
+    nuvem = FakeNuvemAuth();
+    AuthHelper.nuvem = nuvem;
     SharedPreferences.setMockInitialValues({});
     await SQLHelper.apagaBancoInteiro();
     await AuthHelper.sair();
@@ -123,17 +129,81 @@ void main() {
     expect((await AuthHelper.entrar('ana@mail.com', 'Nova12345')).ok, true);
     await AuthHelper.sair();
 
+    // a troca também valeu na nuvem (vale em outros aparelhos)
+    expect(nuvem.contas['ana@mail.com']!.senha, 'Nova12345');
+
+    // "esqueci a senha": envia e-mail pela nuvem; e-mail inválido é recusado
+    expect((await AuthHelper.enviarRedefinicaoSenha('invalido')).ok, false);
+    expect((await AuthHelper.enviarRedefinicaoSenha('ANA@mail.com')).ok, true);
+    expect(nuvem.redefinicoesEnviadas, ['ana@mail.com']);
+  });
+
+  test('cadastro cria conta na nuvem e guarda o uid', () async {
+    expect((await cria('Ana', 'ana@mail.com')).ok, true);
+    final u = (await SQLHelper.pegaUsuarioPorEmail('ana@mail.com')).first;
+    expect(u['firebase_uid'], nuvem.contas['ana@mail.com']!.uid);
+    // e-mail já usado na nuvem (outro aparelho) é recusado
+    nuvem.preCadastra('bia@mail.com', 'Senha123');
+    expect((await cria('Bia', 'bia@mail.com')).erro,
+        'Já existe uma conta com este e-mail.');
+  });
+
+  test('conta antiga (só no aparelho) sobe para a nuvem no primeiro login',
+      () async {
+    final sal = AuthHelper.geraSal();
+    await SQLHelper.inserePerfilLocal(
+        nome: 'Antiga',
+        email: 'antiga@mail.com',
+        hash: AuthHelper.geraHash('Senha123', sal),
+        sal: sal);
+    expect(nuvem.contas.containsKey('antiga@mail.com'), false);
+
+    expect((await AuthHelper.entrar('antiga@mail.com', 'errada')).ok, false);
+    expect((await AuthHelper.entrar('antiga@mail.com', 'Senha123')).ok, true);
+    expect(Sessao.nome, 'Antiga');
+    expect(nuvem.contas['antiga@mail.com']!.senha, 'Senha123');
+    final u = (await SQLHelper.pegaUsuarioPorEmail('antiga@mail.com')).first;
+    expect(u['firebase_uid'], nuvem.contas['antiga@mail.com']!.uid);
+  });
+
+  test('entrar em aparelho novo cria o perfil local a partir da nuvem',
+      () async {
+    nuvem.preCadastra('maria@mail.com', 'Senha123', nome: 'Maria Souza');
+    expect((await SQLHelper.pegaUsuarioPorEmail('maria@mail.com')), isEmpty);
+    expect((await AuthHelper.entrar('maria@mail.com', 'Senha123')).ok, true);
+    expect(Sessao.nome, 'Maria Souza');
+    expect(Sessao.email, 'maria@mail.com');
+  });
+
+  test('sem internet: entra com conta já existente no aparelho', () async {
+    await cria('Ana', 'ana@mail.com');
+    await AuthHelper.sair();
+    nuvem.semInternet = true;
+    expect((await AuthHelper.entrar('ana@mail.com', 'errada')).ok, false);
+    expect((await AuthHelper.entrar('ana@mail.com', 'Senha123')).ok, true);
+    // conta desconhecida sem internet: avisa da conexão
+    await AuthHelper.sair();
+    expect((await AuthHelper.entrar('x@mail.com', 'Senha123')).erro,
+        'Sem conexão com a internet. Tente novamente.');
+  });
+
+  test('login com Google guarda o uid do Firebase', () async {
+    final r = await AuthHelper.entrarComGoogle(
+        nome: 'Gabi',
+        email: 'gabi@gmail.com',
+        googleId: 'g123',
+        firebaseUid: 'fb-uid-1');
+    expect(r.ok, true);
+    final u = (await SQLHelper.pegaUsuarioPorEmail('gabi@gmail.com')).first;
+    expect(u['firebase_uid'], 'fb-uid-1');
+    expect(u['google_id'], 'g123');
+    expect(u['password_hash'], isNull);
+    // quem entra pelo Google não tem senha para trocar
     expect(
-        (await AuthHelper.redefinirSenha(
-                email: 'nao@existe.com', nova: 'Outra12345', confirmacao: 'Outra12345'))
+        (await AuthHelper.alterarSenha(
+                atual: 'x', nova: 'Nova12345', confirmacao: 'Nova12345'))
             .ok,
         false);
-    expect(
-        (await AuthHelper.redefinirSenha(
-                email: 'ANA@mail.com', nova: 'Outra12345', confirmacao: 'Outra12345'))
-            .ok,
-        true);
-    expect((await AuthHelper.entrar('ana@mail.com', 'Outra12345')).ok, true);
   });
 
   test('editar perfil e preferências', () async {
