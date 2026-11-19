@@ -1,30 +1,40 @@
+
 require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
 const rateLimit = require('express-rate-limit');
 const path = require('node:path');
+const pdfParse = require('pdf-parse');
 
 const app = express();
-const port = Number(process.env.PORT || 3000);
-const maxUploadMb = Number(process.env.MAX_UPLOAD_MB || 20);
-const geminiApiKey = String(process.env.GEMINI_API_KEY || '').trim();
-// Interactions API recebe apenas o ID do modelo. Também corrige o prefixo duplicado models/.
-const geminiModel = String(process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite')
-  .trim()
-  .replace(/^models\//i, '')
-  .replace(/^\/+|\/+$/g, '');
 
-app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
+const PORT = Number(process.env.PORT || 3000);
+const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 12);
+const API_KEY = String(process.env.GEMINI_API_KEY || '').trim();
+const MODEL = String(
+  process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite'
+).trim().replace(/^models\//, '');
+
+const TIMEOUT_MS = 180000;
+const MAX_ATTEMPTS = 2;
+
+app.use(cors());
 app.use(express.json({ limit: '2mb' }));
+
 app.use('/api/', rateLimit({
-  windowMs: 60 * 1000,
+  windowMs: 60000,
   limit: 30,
   standardHeaders: true,
   legacyHeaders: false,
 }));
 
-const MIME_BY_EXTENSION = {
+// ========================================
+// UPLOAD
+// ========================================
+
+const MIME_TYPES = {
   '.pdf': 'application/pdf',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
@@ -34,16 +44,28 @@ const MIME_BY_EXTENSION = {
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: maxUploadMb * 1024 * 1024, files: 1 },
-  fileFilter: (_req, file, cb) => {
-    const extension = path.extname(String(file.originalname || '')).toLowerCase();
-    const mime = String(file.mimetype || '').toLowerCase();
-    const normalizedMime = MIME_BY_EXTENSION[extension] || mime;
-    const allowed = Object.values(MIME_BY_EXTENSION).includes(normalizedMime);
-    if (allowed) file.mimetype = normalizedMime;
-    cb(allowed ? null : new Error('Formato não suportado. Envie PDF, JPG, PNG ou WEBP.'), allowed);
+  limits: {
+    fileSize: MAX_UPLOAD_MB * 1024 * 1024,
+    files: 1,
+  },
+  fileFilter: (_req, file, callback) => {
+    const extension = path.extname(
+      file.originalname || ''
+    ).toLowerCase();
+
+    if (!MIME_TYPES[extension]) {
+      return callback(new Error(
+        'Formato inválido. Envie PDF, JPG, PNG ou WEBP.'
+      ));
+    }
+
+    callback(null, true);
   },
 });
+
+// ========================================
+// FORMATO DA RESPOSTA
+// ========================================
 
 const FLASHCARDS_SCHEMA = {
   type: 'object',
@@ -63,175 +85,457 @@ const FLASHCARDS_SCHEMA = {
         required: ['question', 'answer', 'topic'],
       },
     },
-    notes: { type: 'array', items: { type: 'string' } },
+    notes: {
+      type: 'array',
+      items: { type: 'string' },
+    },
   },
-  required: ['title', 'subject', 'summary', 'cards', 'notes'],
+  required: [
+    'title',
+    'subject',
+    'summary',
+    'cards',
+    'notes',
+  ],
 };
 
-function requireAI(_req, res, next) {
-  if (!geminiApiKey) {
-    return res.status(503).json({ error: 'Backend sem GEMINI_API_KEY. Configure o arquivo backend/.env.' });
-  }
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(geminiModel)) {
-    return res.status(503).json({ error: 'GEMINI_MODEL inválido. Use apenas o ID, por exemplo gemini-3.5-flash-lite, sem espaços ou aspas.' });
-  }
-  next();
+// ========================================
+// LER TODO O PDF
+// ========================================
+
+async function readEntirePdf(file) {
+  console.log('[PDF] Iniciando leitura completa...');
+
+  // Uint8Array puro: o pdf-parse falha com "bad XRef entry" em Buffer (Node novo)
+  const pdf = await pdfParse(new Uint8Array(file.buffer));
+
+  const text = String(pdf.text || '')
+    .replace(/\r/g, '\n')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  console.log(`[PDF] Total de páginas: ${pdf.numpages}`);
+  console.log(`[PDF] Total de caracteres: ${text.length}`);
+  console.log('[PDF] Nenhum corte de texto aplicado.');
+
+  return {
+    text,
+    pages: pdf.numpages,
+  };
 }
 
-function extractJson(text) {
-  const cleaned = String(text || '').trim()
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```$/, '');
-  try {
-    return JSON.parse(cleaned);
-  } catch (_) {
-    const first = cleaned.indexOf('{');
-    const last = cleaned.lastIndexOf('}');
-    if (first >= 0 && last > first) return JSON.parse(cleaned.slice(first, last + 1));
-    throw new Error('A IA não retornou um JSON válido. Tente novamente.');
-  }
-}
+// ========================================
+// PREPARAR MATERIAL PARA A IA
+// ========================================
 
-function createGeminiInput(file, typedText, subject) {
-  const text = String(typedText || '').trim();
-  const subjectLine = String(subject || '').trim();
+async function prepareInput(file, typedText, subject) {
+  const input = [];
+
   const prompt = [
-    'Você é um professor especialista em transformar materiais didáticos em flashcards corretos e úteis.',
-    'Use somente as informações do material fornecido; não invente fatos nem complemente com conhecimento externo.',
-    'Leia o documento inteiro, incluindo texto, tabelas, gráficos, imagens, diagramas e legendas.',
-    'Gere exatamente 8 flashcards em português brasileiro, com perguntas objetivas e respostas autocontidas e didáticas.',
-    'Distribua os 8 cards entre os conceitos mais importantes, evite perguntas repetidas e mantenha uma dificuldade pedagogicamente equilibrada.',
-    'Não classifique os cards por nível de dificuldade.',
-    `Matéria informada pelo estudante: ${subjectLine || 'identifique a matéria pelo material'}.`,
-    text ? `Texto complementar informado pelo estudante:\n${text.slice(0, 90000)}` : '',
-    'Retorne somente um objeto JSON no formato exigido pelo schema.',
-  ].filter(Boolean).join('\n\n');
+    'Você é um professor especializado em estudos.',
+    'Analise TODO o material fornecido.',
+    'Considere os conceitos do começo, meio e fim.',
+    'Identifique os 8 conceitos mais importantes.',
+    'Crie exatamente 8 flashcards em português.',
+    'Cada flashcard deve conter pergunta, resposta e tópico.',
+    'As perguntas devem ser claras.',
+    'As respostas devem ser corretas e didáticas.',
+    'Evite perguntas repetidas.',
+    'Não invente informações.',
+    `Matéria: ${subject || 'identifique pelo conteúdo'}.`,
+    'Responda somente com JSON no formato solicitado.',
+  ].join('\n');
 
-  const input = [{ type: 'text', text: prompt }];
+  input.push({
+    type: 'text',
+    text: prompt,
+  });
+
   if (file) {
-    if (!file.buffer || file.buffer.length === 0) {
-      throw new Error('O arquivo enviado está vazio. Selecione o PDF ou a imagem novamente.');
-    }
-    const extension = path.extname(String(file.originalname || '')).toLowerCase();
-    const mimeType = MIME_BY_EXTENSION[extension] || String(file.mimetype || '').toLowerCase();
-    const encoded = file.buffer.toString('base64');
-    if (mimeType === 'application/pdf') {
-      // Interactions document input faz leitura nativa de PDFs, inclusive páginas escaneadas.
-      input.push({ type: 'document', data: encoded, mime_type: 'application/pdf' });
-    } else if (['image/jpeg', 'image/png', 'image/webp'].includes(mimeType)) {
-      input.push({ type: 'image', data: encoded, mime_type: mimeType });
+    const extension = path.extname(
+      file.originalname || ''
+    ).toLowerCase();
+
+    if (extension === '.pdf') {
+      const pdf = await readEntirePdf(file);
+
+      if (pdf.text.length >= 100) {
+        // Envia todo o texto extraído.
+        // Não existe slice ou limite de caracteres aqui.
+        input.push({
+          type: 'text',
+          text:
+            `DOCUMENTO COMPLETO (${pdf.pages} páginas):\n\n` +
+            pdf.text,
+        });
+
+        console.log(
+          `[Gemini] Enviando texto integral: ${pdf.text.length} caracteres.`
+        );
+      } else {
+        // PDF digitalizado: não há texto suficiente
+        // para extrair com pdf-parse.
+        console.log(
+          '[PDF] Texto insuficiente. Enviando PDF original.'
+        );
+
+        input.push({
+          type: 'document',
+          data: file.buffer.toString('base64'),
+          mime_type: 'application/pdf',
+        });
+      }
     } else {
-      throw new Error('Formato não suportado. Envie PDF, JPG, PNG ou WEBP.');
+      input.push({
+        type: 'image',
+        data: file.buffer.toString('base64'),
+        mime_type: MIME_TYPES[extension],
+      });
     }
-  } else if (text.length < 30) {
-    throw new Error('Envie um arquivo ou informe pelo menos 30 caracteres de conteúdo.');
   }
+
+  const extraText = String(typedText || '').trim();
+
+  if (extraText) {
+    input.push({
+      type: 'text',
+      text: `Informações complementares:\n${extraText}`,
+    });
+  }
+
+  if (!file && extraText.length < 30) {
+    throw new Error(
+      'Envie um PDF, uma imagem ou pelo menos 30 caracteres de texto.'
+    );
+  }
+
   return input;
 }
 
-function getInteractionText(payload) {
-  if (typeof payload.output_text === 'string' && payload.output_text.trim()) {
-    return payload.output_text.trim();
+// ========================================
+// EXTRAIR RESPOSTA DA GEMINI
+// ========================================
+
+function getResponseText(data) {
+  if (
+    typeof data.output_text === 'string' &&
+    data.output_text.trim()
+  ) {
+    return data.output_text.trim();
   }
 
-  const pieces = [];
-  for (const step of Array.isArray(payload.steps) ? payload.steps : []) {
+  const parts = [];
+
+  for (const step of data.steps || []) {
     if (step.type !== 'model_output') continue;
-    for (const content of Array.isArray(step.content) ? step.content : []) {
-      if (content.type === 'text' && typeof content.text === 'string') pieces.push(content.text);
+
+    for (const item of step.content || []) {
+      if (typeof item.text === 'string') {
+        parts.push(item.text);
+      }
     }
   }
-  // Compatibilidade com respostas da API que ainda usam o formato outputs.
-  for (const output of Array.isArray(payload.outputs) ? payload.outputs : []) {
-    if (output.type === 'text' && typeof output.text === 'string') pieces.push(output.text);
+
+  for (const output of data.outputs || []) {
+    if (typeof output.text === 'string') {
+      parts.push(output.text);
+    }
   }
-  return pieces.join('\n').trim();
+
+  return parts.join('\n').trim();
 }
 
-async function askGemini(input) {
-  const url = 'https://generativelanguage.googleapis.com/v1beta/interactions';
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-goog-api-key': geminiApiKey,
-    },
-    body: JSON.stringify({
-      model: geminiModel,
-      input,
-      response_format: {
-        type: 'text',
-        mime_type: 'application/json',
-        schema: FLASHCARDS_SCHEMA,
-      },
-      generation_config: { max_output_tokens: 8192 },
-      store: false,
-    }),
-    signal: AbortSignal.timeout(180000),
-  });
+function parseJson(text) {
+  const cleaned = String(text)
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/, '');
 
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const message = payload?.error?.message || `Gemini API retornou HTTP ${response.status}.`;
-    throw new Error(message);
-  }
-
-  const output = getInteractionText(payload);
-  if (!output) {
-    const status = payload.status ? ` (status: ${payload.status})` : '';
-    throw new Error(`Gemini não retornou texto${status}. Tente novamente.`);
-  }
-  return extractJson(output);
-}
-
-app.get('/api/health', (_req, res) => res.json({
-  ok: true,
-  service: 'study-cards-ai',
-  aiConfigured: Boolean(geminiApiKey),
-  provider: 'gemini',
-  api: 'interactions',
-  model: geminiModel,
-}));
-
-app.post('/api/materials/flashcards', requireAI, upload.single('file'), async (req, res, next) => {
   try {
-    const input = createGeminiInput(req.file, req.body.text, req.body.subject);
-    const data = await askGemini(input);
-    if (!Array.isArray(data.cards) || data.cards.length === 0) {
-      throw new Error('A IA não encontrou conteúdo suficiente para gerar flashcards.');
+    return JSON.parse(cleaned);
+  } catch (_) {
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+
+    if (start >= 0 && end > start) {
+      return JSON.parse(cleaned.slice(start, end + 1));
     }
 
-    const cards = data.cards.slice(0, 8).map((card) => ({
-      question: String(card.question || '').trim(),
-      answer: String(card.answer || '').trim(),
-      topic: String(card.topic || '').trim(),
-    })).filter((card) => card.question && card.answer);
-
-    if (cards.length !== 8) {
-      throw new Error('A IA não conseguiu gerar os 8 flashcards solicitados com o material enviado. Tente um material mais completo.');
-    }
-
-    res.json({
-      title: String(data.title || 'Novo material de estudo'),
-      subject: String(data.subject || req.body.subject || 'Matéria identificada pela IA'),
-      summary: String(data.summary || ''),
-      cards,
-      notes: Array.isArray(data.notes) ? data.notes : [],
-      sourceName: req.file?.originalname || 'Texto digitado',
-      generatedAt: new Date().toISOString(),
-    });
-  } catch (error) {
-    next(error);
+    throw new Error(
+      'A IA retornou uma resposta em formato inválido.'
+    );
   }
+}
+
+// ========================================
+// CHAMADA À GEMINI
+// ========================================
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function isTemporaryError(status, message) {
+  return [429, 500, 502, 503, 504].includes(status) ||
+    /high demand|overloaded|try again later/i.test(message);
+}
+
+async function generateWithGemini(input) {
+  const url =
+    'https://generativelanguage.googleapis.com/v1beta/interactions';
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    console.log(
+      `[Gemini] Tentativa ${attempt}/${MAX_ATTEMPTS}: ${MODEL}`
+    );
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': API_KEY,
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          input,
+          response_format: {
+            type: 'text',
+            mime_type: 'application/json',
+            schema: FLASHCARDS_SCHEMA,
+          },
+          generation_config: {
+            max_output_tokens: 8192,
+          },
+          store: false,
+        }),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        const message = data.error?.message ||
+          `Erro HTTP ${response.status}`;
+
+        console.warn(
+          `[Gemini] HTTP ${response.status}: ${message}`
+        );
+
+        if (
+          isTemporaryError(response.status, message) &&
+          attempt < MAX_ATTEMPTS
+        ) {
+          await wait(5000);
+          continue;
+        }
+
+        const error = new Error(message);
+        error.statusCode = response.status;
+        throw error;
+      }
+
+      const responseText = getResponseText(data);
+
+      if (!responseText) {
+        throw new Error(
+          'A Gemini retornou uma resposta vazia.'
+        );
+      }
+
+      console.log('[Gemini] Resposta recebida.');
+
+      return parseJson(responseText);
+    } catch (error) {
+      const connectionError = [
+        'TimeoutError',
+        'AbortError',
+        'TypeError',
+      ].includes(error.name);
+
+      if (connectionError && attempt < MAX_ATTEMPTS) {
+        console.warn(
+          '[Gemini] Falha de conexão:', error.message
+        );
+
+        await wait(5000);
+        continue;
+      }
+
+      if (connectionError) {
+        error.statusCode = 504;
+      }
+
+      throw error;
+    }
+  }
+}
+
+// ========================================
+// VERIFICAR SERVIDOR
+// ========================================
+
+app.get('/api/health', (_req, res) => {
+  res.json({
+    ok: true,
+    service: 'study-cards-ai',
+    aiConfigured: Boolean(API_KEY),
+    provider: 'gemini',
+    model: MODEL,
+    maxUploadMb: MAX_UPLOAD_MB,
+    pdfMode: 'full-text',
+  });
 });
+
+// ========================================
+// GERAR OS 8 FLASHCARDS
+// ========================================
+
+app.post(
+  '/api/materials/flashcards',
+  upload.single('file'),
+  async (req, res, next) => {
+    try {
+      if (!API_KEY) {
+        return res.status(503).json({
+          error: 'Configure GEMINI_API_KEY no arquivo .env.',
+        });
+      }
+
+      console.log(
+        '[StudyCards] Nova solicitação de flashcards.'
+      );
+
+      if (req.file) {
+        console.log(
+          `[StudyCards] Arquivo: ${req.file.originalname}`
+        );
+
+        console.log(
+          `[StudyCards] Tamanho: ${(req.file.size / 1048576).toFixed(2)} MB`
+        );
+      }
+
+      const input = await prepareInput(
+        req.file,
+        req.body.text,
+        req.body.subject
+      );
+
+      const result = await generateWithGemini(input);
+
+      if (!Array.isArray(result.cards)) {
+        throw new Error(
+          'A IA não retornou uma lista de flashcards.'
+        );
+      }
+
+      const cards = result.cards
+        .slice(0, 8)
+        .map(card => ({
+          question: String(card.question || '').trim(),
+          answer: String(card.answer || '').trim(),
+          topic: String(card.topic || '').trim(),
+        }))
+        .filter(card => card.question && card.answer);
+
+      if (cards.length !== 8) {
+        throw new Error(
+          `A IA gerou ${cards.length} flashcards válidos em vez de 8.`
+        );
+      }
+
+      console.log(
+        '[StudyCards] 8 flashcards gerados com sucesso!'
+      );
+
+      return res.json({
+        title: String(
+          result.title || 'Novo material de estudo'
+        ),
+        subject: String(
+          result.subject ||
+          req.body.subject ||
+          'Matéria'
+        ),
+        summary: String(result.summary || ''),
+        cards,
+        notes: Array.isArray(result.notes)
+          ? result.notes
+          : [],
+        sourceName: req.file?.originalname ||
+          'Texto digitado',
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ========================================
+// TRATAMENTO DE ERROS
+// ========================================
 
 app.use((error, _req, res, _next) => {
-  console.error(error);
+  console.error('[StudyCards] Erro:', error.message);
+
   if (error instanceof multer.MulterError) {
-    return res.status(413).json({ error: `Arquivo excede o limite de ${maxUploadMb} MB.` });
+    return res.status(413).json({
+      error:
+        `Arquivo acima do limite de ${MAX_UPLOAD_MB} MB.`,
+    });
   }
-  const status = error.statusCode && Number.isInteger(error.statusCode) ? error.statusCode : 400;
-  res.status(status).json({ error: error.message || 'Erro ao processar solicitação.' });
+
+  const message = String(error.message || '');
+
+  if (/high demand|overloaded|try again later/i.test(message)) {
+    return res.status(503).json({
+      error:
+        'A Gemini está sobrecarregada no momento. Tente novamente mais tarde.',
+    });
+  }
+
+  if (
+    error.statusCode === 504 ||
+    error.name === 'TimeoutError'
+  ) {
+    return res.status(504).json({
+      error:
+        'A Gemini demorou muito para responder.',
+    });
+  }
+
+  const status =
+    Number.isInteger(error.statusCode) &&
+    error.statusCode >= 400 &&
+    error.statusCode <= 599
+      ? error.statusCode
+      : 400;
+
+  return res.status(status).json({
+    error: message || 'Erro ao gerar flashcards.',
+  });
 });
 
-app.listen(port, () => console.log(`Study Cards AI backend ativo em http://localhost:${port}`));
+// ========================================
+// INICIAR BACKEND
+// ========================================
+
+app.listen(PORT, () => {
+  console.log(
+    `Study Cards AI backend ativo em http://localhost:${PORT}`
+  );
+
+  console.log(`[Gemini] Modelo: ${MODEL}`);
+  console.log(
+    `[Gemini] Chave configurada: ${API_KEY ? 'SIM' : 'NÃO'}`
+  );
+  console.log(
+    `[StudyCards] Limite de upload: ${MAX_UPLOAD_MB} MB`
+  );
+  console.log(
+    '[PDF] Modo: leitura integral, sem truncamento.'
+  );
+});

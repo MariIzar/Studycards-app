@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'banco_de_dados/auth_helper.dart';
+import 'services/google_login_service.dart';
 import 'requer_login.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -33,6 +34,46 @@ class _LoginScreenState extends State<LoginScreen> {
       _erro = null;
     });
     final r = await AuthHelper.entrar(_emailCtrl.text, _senhaCtrl.text);
+    if (!mounted) return;
+    if (r.ok) {
+      if (widget.onLogado != null) {
+        widget.onLogado!();
+      } else {
+        voltaDoLogin(context);
+      }
+    } else {
+      setState(() {
+        _carregando = false;
+        _erro = r.erro;
+      });
+    }
+  }
+
+  Future<void> _entrarComGoogle() async {
+    setState(() {
+      _carregando = true;
+      _erro = null;
+    });
+    final g = await GoogleLoginService.entrar();
+    if (!mounted) return;
+    if (g.cancelado) {
+      setState(() => _carregando = false);
+      return;
+    }
+    if (!g.ok) {
+      setState(() {
+        _carregando = false;
+        _erro = g.erro;
+      });
+      return;
+    }
+    final r = await AuthHelper.entrarComGoogle(
+      nome: g.nome,
+      email: g.email,
+      googleId: g.googleId,
+      fotoUrl: g.fotoUrl,
+      firebaseUid: g.firebaseUid,
+    );
     if (!mounted) return;
     if (r.ok) {
       if (widget.onLogado != null) {
@@ -263,6 +304,59 @@ class _LoginScreenState extends State<LoginScreen> {
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                           ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Divisor "ou" + login com Google (só nesta tela)
+                    Row(
+                      children: const [
+                        Expanded(child: Divider(color: Color(0xFFDDDDDD))),
+                        Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 12),
+                          child: Text(
+                            'ou',
+                            style: TextStyle(color: Colors.grey, fontSize: 13),
+                          ),
+                        ),
+                        Expanded(child: Divider(color: Color(0xFFDDDDDD))),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          side: const BorderSide(color: Color(0xFFDDDDDD)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        onPressed: _carregando ? null : _entrarComGoogle,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: const [
+                            Text(
+                              'G',
+                              style: TextStyle(
+                                color: Color(0xFF4285F4),
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            SizedBox(width: 12),
+                            Text(
+                              'Continuar com Google',
+                              style: TextStyle(
+                                color: Colors.black87,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),

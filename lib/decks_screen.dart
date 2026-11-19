@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'main.dart' show routeObserver;
 import 'banco_de_dados/auth_helper.dart';
 import 'banco_de_dados/sql_helper.dart';
 
@@ -10,7 +11,7 @@ class DecksScreen extends StatefulWidget {
   State<DecksScreen> createState() => _DecksScreenState();
 }
 
-class _DecksScreenState extends State<DecksScreen> {
+class _DecksScreenState extends State<DecksScreen> with RouteAware {
   int? selectedDeckId;
 
   List<Map<String, dynamic>> decks = [];
@@ -34,7 +35,32 @@ class _DecksScreenState extends State<DecksScreen> {
     _loadDecks();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    final route = ModalRoute.of(context);
+
+    if (route != null) {
+      routeObserver.unsubscribe(this);
+      routeObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void didPopNext() {
+    _loadDecks();
+  }
+
+  @override
+  void dispose() {
+    routeObserver.unsubscribe(this);
+    super.dispose();
+  }
+
   Future<void> _loadDecks() async {
+    if (!mounted) return;
+
     setState(() {
       isLoading = true;
       errorMessage = null;
@@ -56,6 +82,8 @@ class _DecksScreenState extends State<DecksScreen> {
         errorMessage = 'Erro ao carregar decks: $e';
         isLoading = false;
       });
+
+      debugPrint('Erro ao carregar decks: $e');
     }
   }
 
@@ -233,6 +261,7 @@ class _DecksScreenState extends State<DecksScreen> {
                 ],
               ),
             ),
+
             Expanded(
               child: RefreshIndicator(
                 onRefresh: _loadDecks,
@@ -348,7 +377,6 @@ class _DecksScreenState extends State<DecksScreen> {
               ),
             ),
 
-            // Barra de navegação inferior
             Container(
               padding: const EdgeInsets.symmetric(vertical: 10),
               decoration: const BoxDecoration(
@@ -586,10 +614,6 @@ class _DecksScreenState extends State<DecksScreen> {
   }
 }
 
-// Diálogo separado para editar o deck.
-// Isso evita descartar o TextEditingController
-// antes de o diálogo terminar de fechar.
-
 class _EditDeckDialog extends StatefulWidget {
   final String initialName;
   final int initialColor;
@@ -609,6 +633,7 @@ class _EditDeckDialogState extends State<_EditDeckDialog> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
   late final TextEditingController _nameController;
+
   late int _selectedColor;
 
   @override
@@ -688,6 +713,7 @@ class _EditDeckDialogState extends State<_EditDeckDialog> {
                 runSpacing: 10,
                 children: widget.colors.map((color) {
                   final int colorValue = color.toARGB32();
+
                   final bool isSelected = _selectedColor == colorValue;
 
                   return GestureDetector(

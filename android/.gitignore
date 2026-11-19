@@ -12,3 +12,6 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
+
+# Config do Firebase deste projeto (nao sobe para o git; passe pelo grupo em privado)
+app/google-services.json

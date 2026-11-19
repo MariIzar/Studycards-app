@@ -7,6 +7,8 @@ import 'package:study_cards/banco_de_dados/auth_helper.dart';
 import 'package:study_cards/banco_de_dados/sql_helper.dart';
 import 'package:study_cards/main.dart';
 
+import 'fake_nuvem.dart';
+
 Future<void> espera(WidgetTester t) async {
   for (var i = 0; i < 12; i++) {
     await t.runAsync(() => Future.delayed(const Duration(milliseconds: 150)));
@@ -29,6 +31,7 @@ void main() {
     t.view.devicePixelRatio = 2.75;
     addTearDown(t.view.reset);
 
+    AuthHelper.nuvem = FakeNuvemAuth();
     SharedPreferences.setMockInitialValues({});
     await t.runAsync(() async {
       await SQLHelper.apagaBancoInteiro();
