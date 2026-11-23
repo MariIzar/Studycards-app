@@ -17,6 +17,12 @@ const MODEL = String(process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite').trim()
 const TIMEOUT_MS = 180000;
 const MAX_ATTEMPTS = 3;
 
+const FALLBACK_MODEL = String(
+  process.env.GEMINI_FALLBACK_MODEL || 'gemini-2.5-flash'
+).trim().replace(/^models\//, '');
+
+const FALLBACK_ATTEMPTS = 2;
+
 function initializeFirebaseAdmin() {
   if (getApps().length) return;
   const serviceAccountJson = String(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '').trim();
@@ -253,11 +259,13 @@ function isTemporaryError(status, message) {
     /high demand|overloaded|try again later/i.test(message);
 }
 
-async function generateWithGemini(input) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(MODEL)}:generateContent`;
 
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    console.log(`[Gemini] Tentativa ${attempt}/${MAX_ATTEMPTS}: ${MODEL}`);
+async function generateWithModel(input, model, maxAttempts) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    console.log(`[Gemini] Tentativa ${attempt}/${maxAttempts}: ${model}`);
+
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -269,7 +277,10 @@ async function generateWithGemini(input) {
           contents: [{
             role: 'user',
             parts: input.map(item => {
-              if (item.type === 'text') return { text: item.text };
+              if (item.type === 'text') {
+                return { text: item.text };
+              }
+
               if (item.type === 'image' || item.type === 'document') {
                 return {
                   inlineData: {
@@ -278,7 +289,10 @@ async function generateWithGemini(input) {
                   },
                 };
               }
-              throw new Error(`Tipo de conteúdo não suportado: ${item.type}`);
+
+              throw new Error(
+                `Tipo de conteúdo não suportado: ${item.type}`
+              );
             }),
           }],
           generationConfig: {
@@ -293,18 +307,30 @@ async function generateWithGemini(input) {
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        const message = data.error?.message || `Erro HTTP ${response.status}`;
+        const message =
+          data.error?.message || `Erro HTTP ${response.status}`;
+
         console.warn('[Gemini] Falha na geração:', {
           status: response.status,
-          model: MODEL,
+          model,
           attempt,
           message,
           reason: data.error?.status || 'não informado',
         });
 
-        if (isTemporaryError(response.status, message) && attempt < MAX_ATTEMPTS) {
-          const delay = retryDelayMs(attempt, response.headers.get('retry-after'));
-          console.warn(`[Gemini] Nova tentativa em ${delay} ms.`);
+        if (
+          isTemporaryError(response.status, message) &&
+          attempt < maxAttempts
+        ) {
+          const delay = retryDelayMs(
+            attempt,
+            response.headers.get('retry-after')
+          );
+
+          console.warn(
+            `[Gemini] Nova tentativa em ${delay} ms.`
+          );
+
           await wait(delay);
           continue;
         }
@@ -315,21 +341,69 @@ async function generateWithGemini(input) {
       }
 
       const responseText = getResponseText(data);
+
       if (!responseText) {
-        throw new Error('A Gemini retornou uma resposta vazia.');
+        throw new Error(
+          'A Gemini retornou uma resposta vazia.'
+        );
       }
+
       console.log('[Gemini] Resposta recebida.');
       return parseJson(responseText);
+
     } catch (error) {
-      const connectionError = ['TimeoutError', 'AbortError', 'TypeError'].includes(error.name);
-      if (connectionError && attempt < MAX_ATTEMPTS) {
-        console.warn('[Gemini] Falha de conexão:', error.message);
+      const connectionError = [
+        'TimeoutError',
+        'AbortError',
+        'TypeError',
+      ].includes(error.name);
+
+      if (connectionError && attempt < maxAttempts) {
+        console.warn(
+          '[Gemini] Falha de conexão:',
+          error.message
+        );
+
         await wait(retryDelayMs(attempt, null));
         continue;
       }
-      if (connectionError) error.statusCode = 504;
+
+      if (connectionError) {
+        error.statusCode = 504;
+      }
+
       throw error;
     }
+  }
+}
+
+async function generateWithGemini(input) {
+  try {
+    return await generateWithModel(
+      input,
+      MODEL,
+      MAX_ATTEMPTS
+    );
+
+  } catch (error) {
+    // Aciona o modelo reserva somente em caso de HTTP 503.
+    if (
+      error.statusCode !== 503 ||
+      !FALLBACK_MODEL ||
+      FALLBACK_MODEL === MODEL
+    ) {
+      throw error;
+    }
+
+    console.warn(
+      `[Gemini] Modelo ${MODEL} indisponível. Tentando reserva: ${FALLBACK_MODEL}`
+    );
+
+    return generateWithModel(
+      input,
+      FALLBACK_MODEL,
+      FALLBACK_ATTEMPTS
+    );
   }
 }
 
