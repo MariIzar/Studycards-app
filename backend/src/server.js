@@ -121,8 +121,8 @@ const FLASHCARDS_SCHEMA = {
     summary: { type: 'string' },
     cards: {
       type: 'array',
-      minItems: 8,
-      maxItems: 8,
+      minItems: 5,
+      maxItems: 5,
       items: {
         type: 'object',
         properties: {
@@ -158,8 +158,8 @@ async function prepareInput(file, typedText, subject) {
     'Você é um professor especializado em estudos.',
     'Analise TODO o material fornecido.',
     'Considere os conceitos do começo, meio e fim.',
-    'Identifique os 8 conceitos mais importantes.',
-    'Crie exatamente 8 flashcards em português.',
+    'Identifique os 5 conceitos mais importantes.',
+    'Crie exatamente 5 flashcards em português.',
     'Cada flashcard deve conter pergunta, resposta e tópico.',
     'As perguntas devem ser claras.',
     'As respostas devem ser corretas e didáticas.',
@@ -447,7 +447,7 @@ app.post(
       }
 
       const cards = result.cards
-        .slice(0, 8)
+        .slice(0, 5)
         .map(card => ({
           question: String(card.question || '').trim(),
           answer: String(card.answer || '').trim(),
@@ -455,11 +455,11 @@ app.post(
         }))
         .filter(card => card.question && card.answer);
 
-      if (cards.length !== 8) {
+      if (cards.length !== 5) {
         throw new Error(`A IA gerou ${cards.length} flashcards válidos em vez de 8.`);
       }
 
-      console.log('[StudyCards] 8 flashcards gerados com sucesso!');
+      console.log('[StudyCards] 5 flashcards gerados com sucesso!');
 
       return res.json({
         title: String(result.title || 'Novo material de estudo'),
