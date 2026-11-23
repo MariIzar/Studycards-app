@@ -1,86 +1,90 @@
 import 'package:flutter/material.dart';
 
-class LanguageScreen extends StatefulWidget {
+import 'language_controller.dart';
+
+class LanguageScreen extends StatelessWidget {
   const LanguageScreen({super.key});
 
   @override
-  State<LanguageScreen> createState() => _LanguageScreenState();
-}
-
-class _LanguageScreenState extends State<LanguageScreen> {
-  String selectedLanguage = 'Português';
-
-  @override
   Widget build(BuildContext context) {
-    const primaryPurple = Color(0xFF6C4DFF);
+    const purple = Color(0xFF6C4DFF);
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FE),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text(
-          'Idioma',
-          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
-        ),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.04),
-                blurRadius: 10,
-                offset: const Offset(0, 2),
-              ),
-            ],
+    return ValueListenableBuilder<Locale>(
+      valueListenable: LanguageController.locale,
+      builder: (context, idiomaAtual, child) {
+        final tema = Theme.of(context);
+        final cores = tema.colorScheme;
+
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(
+              LanguageController.traduzir('language'),
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          body: ListView(
+            padding: const EdgeInsets.all(20),
             children: [
-              RadioListTile<String>(
-                title: const Text(
-                  'Português (Brasil)',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+              Container(
+                decoration: BoxDecoration(
+                  color: cores.surface,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: cores.outlineVariant),
                 ),
-                value: 'Português',
-                groupValue: selectedLanguage,
-                activeColor: primaryPurple,
-                onChanged: (val) => setState(() => selectedLanguage = val!),
-              ),
-              const Divider(height: 1),
-              RadioListTile<String>(
-                title: const Text(
-                  'English (US)',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    RadioListTile<String>(
+                      title: const Text(
+                        'Português (Brasil)',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      value: 'pt',
+                      groupValue: idiomaAtual.languageCode,
+                      activeColor: purple,
+                      onChanged: (valor) {
+                        if (valor != null) {
+                          LanguageController.alterarIdioma(valor);
+                        }
+                      },
+                    ),
+                    const Divider(height: 1),
+                    RadioListTile<String>(
+                      title: const Text(
+                        'English (US)',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      value: 'en',
+                      groupValue: idiomaAtual.languageCode,
+                      activeColor: purple,
+                      onChanged: (valor) {
+                        if (valor != null) {
+                          LanguageController.alterarIdioma(valor);
+                        }
+                      },
+                    ),
+                    const Divider(height: 1),
+                    RadioListTile<String>(
+                      title: const Text(
+                        'Español',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      value: 'es',
+                      groupValue: idiomaAtual.languageCode,
+                      activeColor: purple,
+                      onChanged: (valor) {
+                        if (valor != null) {
+                          LanguageController.alterarIdioma(valor);
+                        }
+                      },
+                    ),
+                  ],
                 ),
-                value: 'English',
-                groupValue: selectedLanguage,
-                activeColor: primaryPurple,
-                onChanged: (val) => setState(() => selectedLanguage = val!),
-              ),
-              const Divider(height: 1),
-              RadioListTile<String>(
-                title: const Text(
-                  'Español',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                value: 'Español',
-                groupValue: selectedLanguage,
-                activeColor: primaryPurple,
-                onChanged: (val) => setState(() => selectedLanguage = val!),
               ),
             ],
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

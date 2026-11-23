@@ -2,11 +2,24 @@ import 'package:flutter/material.dart';
 
 import 'banco_de_dados/sql_helper.dart';
 import 'edit_flashcard.dart';
+import 'language_controller.dart';
+
+// Traduções locais desta tela, acompanhando o idioma salvo.
+String _deckTr(String pt, String en, String es) {
+  switch (LanguageController.locale.value.languageCode) {
+    case 'en':
+      return en;
+    case 'es':
+      return es;
+    default:
+      return pt;
+  }
+}
 
 class DeckDetailsScreen extends StatefulWidget {
   final String title;
 
-  const DeckDetailsScreen({super.key, this.title = ''});
+  DeckDetailsScreen({super.key, this.title = ''});
 
   @override
   State<DeckDetailsScreen> createState() => _DeckDetailsScreenState();
@@ -14,7 +27,6 @@ class DeckDetailsScreen extends StatefulWidget {
 
 class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
   static const Color primaryPurple = Color(0xFF6C4DFF);
-  static const Color backgroundColor = Color(0xFFF8F9FE);
 
   int? deckId;
   String deckTitle = '';
@@ -23,6 +35,22 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
   bool isLoading = true;
   bool initialized = false;
   String? errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    LanguageController.locale.addListener(_onLocaleChanged);
+  }
+
+  void _onLocaleChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    LanguageController.locale.removeListener(_onLocaleChanged);
+    super.dispose();
+  }
 
   @override
   void didChangeDependencies() {
@@ -38,7 +66,11 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
         _loadDeck();
       } else {
         isLoading = false;
-        errorMessage = 'Nenhum deck foi selecionado.';
+        errorMessage = _deckTr(
+          'Nenhum deck foi selecionado.',
+          'No deck was selected.',
+          'No se seleccionó ningún mazo.',
+        );
       }
     }
   }
@@ -62,13 +94,19 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
       if (deckResult.isEmpty) {
         setState(() {
           isLoading = false;
-          errorMessage = 'Este deck não foi encontrado.';
+          errorMessage = _deckTr(
+            'Este deck não foi encontrado.',
+            'This deck was not found.',
+            'No se encontró este mazo.',
+          );
         });
         return;
       }
 
       setState(() {
-        deckTitle = deckResult.first['title']?.toString() ?? 'Sem nome';
+        deckTitle =
+            deckResult.first['title']?.toString() ??
+            _deckTr('Sem nome', 'Untitled', 'Sin nombre');
         flashcards = cardsResult;
         isLoading = false;
       });
@@ -77,7 +115,11 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
 
       setState(() {
         isLoading = false;
-        errorMessage = 'Erro ao carregar deck: $e';
+        errorMessage = _deckTr(
+          'Erro ao carregar deck: $e',
+          'Error loading deck: $e',
+          'Error al cargar el mazo: $e',
+        );
       });
     }
   }
@@ -113,7 +155,7 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
     if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
+      SnackBar(content: Text(message), duration: Duration(seconds: 2)),
     );
   }
 
@@ -122,7 +164,9 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
     final result = await showDialog<Map<String, String>>(
       context: context,
       builder: (context) {
-        return const _FlashcardFormDialog(title: 'Novo flashcard');
+        return _FlashcardFormDialog(
+          title: _deckTr('Novo flashcard', 'New flashcard', 'Nueva tarjeta'),
+        );
       },
     );
 
@@ -138,9 +182,21 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
       if (!mounted) return;
 
       await _loadDeck();
-      _showMessage('Flashcard criado com sucesso!');
+      _showMessage(
+        _deckTr(
+          'Flashcard criado com sucesso!',
+          'Flashcard created successfully!',
+          '¡Tarjeta creada correctamente!',
+        ),
+      );
     } catch (e) {
-      _showMessage('Erro ao criar flashcard: $e');
+      _showMessage(
+        _deckTr(
+          'Erro ao criar flashcard: $e',
+          'Error creating flashcard: $e',
+          'Error al crear la tarjeta: $e',
+        ),
+      );
     }
   }
 
@@ -170,22 +226,32 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          backgroundColor: backgroundColor,
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
           ),
-          title: const Text(
-            'Excluir flashcard?',
+          title: Text(
+            _deckTr(
+              'Excluir flashcard?',
+              'Delete flashcard?',
+              '¿Eliminar tarjeta?',
+            ),
             style: TextStyle(fontWeight: FontWeight.bold),
           ),
-          content: const Text('Este flashcard será excluído permanentemente.'),
+          content: Text(
+            _deckTr(
+              'Este flashcard será excluído permanentemente.',
+              'This flashcard will be permanently deleted.',
+              'Esta tarjeta se eliminará permanentemente.',
+            ),
+          ),
           actions: [
             TextButton(
               onPressed: () {
                 Navigator.pop(dialogContext, false);
               },
-              child: const Text(
-                'Cancelar',
+              child: Text(
+                _deckTr('Cancelar', 'Cancel', 'Cancelar'),
                 style: TextStyle(color: primaryPurple),
               ),
             ),
@@ -200,7 +266,7 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
               onPressed: () {
                 Navigator.pop(dialogContext, true);
               },
-              child: const Text('Excluir'),
+              child: Text(_deckTr('Excluir', 'Delete', 'Eliminar')),
             ),
           ],
         );
@@ -217,14 +283,32 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
       if (!mounted) return;
 
       if (remaining.isNotEmpty) {
-        _showMessage('Não foi possível excluir.');
+        _showMessage(
+          _deckTr(
+            'Não foi possível excluir.',
+            'Could not delete.',
+            'No se pudo eliminar.',
+          ),
+        );
         return;
       }
 
       await _loadDeck();
-      _showMessage('Flashcard excluído!');
+      _showMessage(
+        _deckTr(
+          'Flashcard excluído!',
+          'Flashcard deleted!',
+          '¡Tarjeta eliminada!',
+        ),
+      );
     } catch (e) {
-      _showMessage('Erro ao excluir flashcard: $e');
+      _showMessage(
+        _deckTr(
+          'Erro ao excluir flashcard: $e',
+          'Error deleting flashcard: $e',
+          'Error al eliminar la tarjeta: $e',
+        ),
+      );
     }
   }
 
@@ -232,7 +316,13 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
   Future<void> _startReview() async {
     // Só impede a revisão se o deck estiver vazio.
     if (flashcards.isEmpty) {
-      _showMessage('Adicione flashcards antes de começar.');
+      _showMessage(
+        _deckTr(
+          'Adicione flashcards antes de começar.',
+          'Add flashcards before starting.',
+          'Añade tarjetas antes de empezar.',
+        ),
+      );
       return;
     }
 
@@ -251,7 +341,7 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: backgroundColor,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
 
       appBar: AppBar(
         backgroundColor: Colors.transparent,
@@ -259,22 +349,24 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
         centerTitle: true,
 
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          icon: Icon(Icons.arrow_back, color: Colors.black),
           onPressed: () => Navigator.pop(context),
         ),
 
         title: Text(
-          deckTitle.isEmpty ? 'Detalhes do deck' : deckTitle,
-          style: const TextStyle(
-            color: Colors.black,
+          deckTitle.isEmpty
+              ? _deckTr('Detalhes do deck', 'Deck details', 'Detalles del mazo')
+              : deckTitle,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurface,
             fontWeight: FontWeight.bold,
           ),
         ),
 
         actions: [
           IconButton(
-            tooltip: 'Atualizar',
-            icon: const Icon(Icons.refresh, color: Colors.black),
+            tooltip: _deckTr('Atualizar', 'Refresh', 'Actualizar'),
+            icon: Icon(Icons.refresh, color: Colors.black),
             onPressed: _loadDeck,
           ),
         ],
@@ -285,7 +377,7 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
           children: [
             Expanded(
               child: isLoading
-                  ? const Center(
+                  ? Center(
                       child: CircularProgressIndicator(color: primaryPurple),
                     )
                   : errorMessage != null
@@ -298,57 +390,60 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
                   : ListView(
                       padding: const EdgeInsets.symmetric(horizontal: 24),
                       children: [
-                        const SizedBox(height: 10),
+                        SizedBox(height: 10),
 
                         // TÍTULO DO DECK
                         Text(
                           deckTitle,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
-                            color: Colors.black,
+                            color: Theme.of(context).colorScheme.onSurface,
                           ),
                         ),
 
-                        const SizedBox(height: 4),
+                        SizedBox(height: 4),
 
                         Text(
-                          '$totalCards ${totalCards == 1 ? 'flashcard' : 'flashcards'}',
-                          style: const TextStyle(
-                            color: Colors.grey,
-                            fontSize: 15,
-                          ),
+                          '$totalCards ${totalCards == 1 ? _deckTr('flashcard', 'flashcard', 'tarjeta') : _deckTr('flashcards', 'flashcards', 'tarjetas')}',
+                          style: TextStyle(color: Colors.grey, fontSize: 15),
                         ),
 
-                        const SizedBox(height: 20),
+                        SizedBox(height: 20),
 
                         // PROGRESSO DO DECK
                         Container(
                           padding: const EdgeInsets.all(20),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: Theme.of(context).colorScheme.surface,
                             borderRadius: BorderRadius.circular(20),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.04),
+                                color: Colors.black.withValues(alpha: 0.04),
                                 blurRadius: 10,
-                                offset: const Offset(0, 2),
+                                offset: Offset(0, 2),
                               ),
                             ],
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                'Seu progresso',
+                              Text(
+                                _deckTr(
+                                  'Seu progresso',
+                                  'Your progress',
+                                  'Tu progreso',
+                                ),
                                 style: TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.bold,
-                                  color: Colors.black87,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurface,
                                 ),
                               ),
 
-                              const SizedBox(height: 6),
+                              SizedBox(height: 6),
 
                               Wrap(
                                 crossAxisAlignment: WrapCrossAlignment.center,
@@ -357,15 +452,21 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
                                 children: [
                                   Text(
                                     '$progressPercentage%',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 32,
                                       fontWeight: FontWeight.bold,
-                                      color: Colors.black,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface,
                                     ),
                                   ),
                                   Text(
-                                    '$masteredCards de $totalCards cards dominados',
-                                    style: const TextStyle(
+                                    _deckTr(
+                                      '$masteredCards de $totalCards cards dominados',
+                                      '$masteredCards of $totalCards cards mastered',
+                                      '$masteredCards de $totalCards tarjetas dominadas',
+                                    ),
+                                    style: TextStyle(
                                       color: Colors.grey,
                                       fontSize: 13,
                                     ),
@@ -373,14 +474,14 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
                                 ],
                               ),
 
-                              const SizedBox(height: 12),
+                              SizedBox(height: 12),
 
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(10),
                                 child: LinearProgressIndicator(
                                   value: progress,
                                   minHeight: 8,
-                                  backgroundColor: const Color(0xFFEBEBF5),
+                                  backgroundColor: Color(0xFFEBEBF5),
                                   valueColor:
                                       const AlwaysStoppedAnimation<Color>(
                                         primaryPurple,
@@ -391,24 +492,28 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
                           ),
                         ),
 
-                        const SizedBox(height: 28),
+                        SizedBox(height: 28),
 
                         // TÍTULO DA LISTA
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text(
-                              'Flashcards',
+                            Text(
+                              _deckTr('Flashcards', 'Flashcards', 'Tarjetas'),
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.black,
+                                color: Theme.of(context).colorScheme.onSurface,
                               ),
                             ),
                             IconButton(
-                              tooltip: 'Adicionar flashcard',
+                              tooltip: _deckTr(
+                                'Adicionar flashcard',
+                                'Add flashcard',
+                                'Añadir tarjeta',
+                              ),
                               onPressed: _addFlashcard,
-                              icon: const Icon(
+                              icon: Icon(
                                 Icons.add_circle,
                                 color: primaryPurple,
                                 size: 30,
@@ -417,17 +522,17 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
                           ],
                         ),
 
-                        const SizedBox(height: 16),
+                        SizedBox(height: 16),
 
                         // LISTA DE FLASHCARDS
                         if (flashcards.isEmpty)
                           Container(
                             padding: const EdgeInsets.all(24),
                             decoration: BoxDecoration(
-                              color: Colors.white,
+                              color: Theme.of(context).colorScheme.surface,
                               borderRadius: BorderRadius.circular(16),
                             ),
-                            child: const Column(
+                            child: Column(
                               children: [
                                 Icon(
                                   Icons.style_outlined,
@@ -436,12 +541,20 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
                                 ),
                                 SizedBox(height: 12),
                                 Text(
-                                  'Nenhum flashcard ainda',
+                                  _deckTr(
+                                    'Nenhum flashcard ainda',
+                                    'No flashcards yet',
+                                    'Todavía no hay tarjetas',
+                                  ),
                                   style: TextStyle(fontWeight: FontWeight.bold),
                                 ),
                                 SizedBox(height: 6),
                                 Text(
-                                  'Toque no botão + para adicionar seu primeiro flashcard.',
+                                  _deckTr(
+                                    'Toque no botão + para adicionar seu primeiro flashcard.',
+                                    'Tap + to add your first flashcard.',
+                                    'Toca + para añadir tu primera tarjeta.',
+                                  ),
                                   textAlign: TextAlign.center,
                                   style: TextStyle(color: Colors.grey),
                                 ),
@@ -453,7 +566,7 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
                             (card) => _buildFlashcardItem(card),
                           ),
 
-                        const SizedBox(height: 20),
+                        SizedBox(height: 20),
 
                         // BOTÃO COMEÇAR REVISÃO
                         ElevatedButton.icon(
@@ -467,9 +580,13 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
                             ),
                           ),
                           onPressed: _startReview,
-                          icon: const Icon(Icons.play_arrow_rounded),
-                          label: const Text(
-                            'Começar revisão',
+                          icon: Icon(Icons.play_arrow_rounded),
+                          label: Text(
+                            _deckTr(
+                              'Começar revisão',
+                              'Start review',
+                              'Empezar repaso',
+                            ),
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
@@ -477,7 +594,7 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
                           ),
                         ),
 
-                        const SizedBox(height: 20),
+                        SizedBox(height: 20),
                       ],
                     ),
             ),
@@ -485,8 +602,8 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
             // BARRA DE NAVEGAÇÃO INFERIOR
             Container(
               padding: const EdgeInsets.symmetric(vertical: 10),
-              decoration: const BoxDecoration(
-                color: Colors.white,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black12,
@@ -502,7 +619,10 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
                     onTap: () {
                       Navigator.pushReplacementNamed(context, '/home');
                     },
-                    child: _buildNavItem(Icons.home_outlined, 'Início'),
+                    child: _buildNavItem(
+                      Icons.home_outlined,
+                      _deckTr('Início', 'Home', 'Inicio'),
+                    ),
                   ),
 
                   GestureDetector(
@@ -511,7 +631,7 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
                     },
                     child: _buildNavItem(
                       Icons.style_outlined,
-                      'Decks',
+                      _deckTr('Decks', 'Decks', 'Mazos'),
                       active: true,
                     ),
                   ),
@@ -527,15 +647,11 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
                     child: Container(
                       width: 54,
                       height: 54,
-                      decoration: const BoxDecoration(
+                      decoration: BoxDecoration(
                         color: primaryPurple,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(
-                        Icons.add,
-                        color: Colors.white,
-                        size: 28,
-                      ),
+                      child: Icon(Icons.add, color: Colors.white, size: 28),
                     ),
                   ),
 
@@ -543,14 +659,20 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
                     onTap: () {
                       Navigator.pushNamed(context, '/progress');
                     },
-                    child: _buildNavItem(Icons.bar_chart_outlined, 'Progresso'),
+                    child: _buildNavItem(
+                      Icons.bar_chart_outlined,
+                      _deckTr('Progresso', 'Progress', 'Progreso'),
+                    ),
                   ),
 
                   GestureDetector(
                     onTap: () {
                       Navigator.pushNamed(context, '/profile');
                     },
-                    child: _buildNavItem(Icons.person_outline, 'Perfil'),
+                    child: _buildNavItem(
+                      Icons.person_outline,
+                      _deckTr('Perfil', 'Profile', 'Perfil'),
+                    ),
                   ),
                 ],
               ),
@@ -574,13 +696,13 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 8,
-            offset: const Offset(0, 2),
+            offset: Offset(0, 2),
           ),
         ],
       ),
@@ -590,27 +712,27 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
               color: acertado
-                  ? const Color(0xFFE6F9EE)
+                  ? Color(0xFFE6F9EE)
                   : errado
-                      ? const Color(0xFFFDECEC)
-                      : const Color(0xFFF0ECFF),
+                  ? Color(0xFFFDECEC)
+                  : Color(0xFFF0ECFF),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
               acertado
                   ? Icons.check_circle
                   : errado
-                      ? Icons.cancel
-                      : Icons.description,
+                  ? Icons.cancel
+                  : Icons.description,
               color: acertado
                   ? verde
                   : errado
-                      ? vermelho
-                      : primaryPurple,
+                  ? vermelho
+                  : primaryPurple,
             ),
           ),
 
-          const SizedBox(width: 12),
+          SizedBox(width: 12),
 
           Expanded(
             child: InkWell(
@@ -622,27 +744,35 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
                   children: [
                     Text(
                       acertado
-                          ? 'Pergunta · Acertado'
+                          ? _deckTr(
+                              'Pergunta · Acertado',
+                              'Question · Correct',
+                              'Pregunta · Correcta',
+                            )
                           : errado
-                              ? 'Pergunta · Errado'
-                              : 'Pergunta',
+                          ? _deckTr(
+                              'Pergunta · Errado',
+                              'Question · Incorrect',
+                              'Pregunta · Incorrecta',
+                            )
+                          : _deckTr('Pergunta', 'Question', 'Pregunta'),
                       style: TextStyle(
                         color: acertado
                             ? verde
                             : errado
-                                ? vermelho
-                                : primaryPurple,
+                            ? vermelho
+                            : primaryPurple,
                         fontWeight: FontWeight.bold,
                         fontSize: 13,
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    SizedBox(height: 4),
                     Text(
                       question,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
-                        color: Colors.black87,
+                        color: Theme.of(context).colorScheme.onSurface,
                       ),
                     ),
                   ],
@@ -652,8 +782,12 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
           ),
 
           PopupMenuButton<String>(
-            tooltip: 'Opções do flashcard',
-            icon: const Icon(Icons.more_vert, color: Colors.black38),
+            tooltip: _deckTr(
+              'Opções do flashcard',
+              'Flashcard options',
+              'Opciones de la tarjeta',
+            ),
+            icon: Icon(Icons.more_vert, color: Colors.black38),
             onSelected: (value) {
               if (value == 'edit') {
                 _editFlashcard(card);
@@ -662,23 +796,26 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
               }
             },
             itemBuilder: (context) => [
-              const PopupMenuItem<String>(
+              PopupMenuItem<String>(
                 value: 'edit',
                 child: Row(
                   children: [
                     Icon(Icons.edit_outlined, color: primaryPurple),
                     SizedBox(width: 8),
-                    Text('Editar'),
+                    Text(_deckTr('Editar', 'Edit', 'Editar')),
                   ],
                 ),
               ),
-              const PopupMenuItem<String>(
+              PopupMenuItem<String>(
                 value: 'delete',
                 child: Row(
                   children: [
                     Icon(Icons.delete_outline, color: Colors.red),
                     SizedBox(width: 8),
-                    Text('Excluir', style: TextStyle(color: Colors.red)),
+                    Text(
+                      _deckTr('Excluir', 'Delete', 'Eliminar'),
+                      style: TextStyle(color: Colors.red),
+                    ),
                   ],
                 ),
               ),
@@ -697,7 +834,7 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(icon, color: color, size: 24),
-        const SizedBox(height: 4),
+        SizedBox(height: 4),
         Text(
           label,
           style: TextStyle(
@@ -718,7 +855,7 @@ class _DeckDetailsScreenState extends State<DeckDetailsScreen> {
 class _FlashcardFormDialog extends StatefulWidget {
   final String title;
 
-  const _FlashcardFormDialog({required this.title});
+  _FlashcardFormDialog({required this.title});
 
   @override
   State<_FlashcardFormDialog> createState() => _FlashcardFormDialogState();
@@ -726,7 +863,6 @@ class _FlashcardFormDialog extends StatefulWidget {
 
 class _FlashcardFormDialogState extends State<_FlashcardFormDialog> {
   static const Color primaryPurple = Color(0xFF6C4DFF);
-  static const Color lightPurple = Color(0xFFF8F9FE);
   static const Color borderPurple = Color(0xFFE5DFFF);
 
   final formKey = GlobalKey<FormState>();
@@ -738,12 +874,18 @@ class _FlashcardFormDialogState extends State<_FlashcardFormDialog> {
   void initState() {
     super.initState();
 
+    LanguageController.locale.addListener(_onLocaleChanged);
     questionController = TextEditingController();
     answerController = TextEditingController();
   }
 
+  void _onLocaleChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    LanguageController.locale.removeListener(_onLocaleChanged);
     questionController.dispose();
     answerController.dispose();
     super.dispose();
@@ -774,11 +916,11 @@ class _FlashcardFormDialogState extends State<_FlashcardFormDialog> {
           children: [
             Icon(icon, color: primaryPurple, size: 19),
 
-            const SizedBox(width: 8),
+            SizedBox(width: 8),
 
             Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
                 color: Color(0xFF333333),
@@ -787,44 +929,48 @@ class _FlashcardFormDialogState extends State<_FlashcardFormDialog> {
           ],
         ),
 
-        const SizedBox(height: 10),
+        SizedBox(height: 10),
 
         TextFormField(
           controller: controller,
           maxLines: maxLines,
           minLines: maxLines,
           textAlignVertical: TextAlignVertical.top,
-          style: const TextStyle(fontSize: 15, color: Colors.black87),
+          style: TextStyle(fontSize: 15, color: Colors.black87),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: const TextStyle(fontSize: 14, color: Color(0xFFAAAAAA)),
+            hintStyle: TextStyle(fontSize: 14, color: Color(0xFFAAAAAA)),
             filled: true,
-            fillColor: Colors.white,
+            fillColor: Theme.of(context).colorScheme.surface,
             contentPadding: const EdgeInsets.all(16),
 
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
-              borderSide: const BorderSide(color: borderPurple, width: 1.5),
+              borderSide: BorderSide(color: borderPurple, width: 1.5),
             ),
 
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
-              borderSide: const BorderSide(color: primaryPurple, width: 2),
+              borderSide: BorderSide(color: primaryPurple, width: 2),
             ),
 
             errorBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
-              borderSide: const BorderSide(color: Colors.redAccent),
+              borderSide: BorderSide(color: Colors.redAccent),
             ),
 
             focusedErrorBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
-              borderSide: const BorderSide(color: Colors.redAccent, width: 2),
+              borderSide: BorderSide(color: Colors.redAccent, width: 2),
             ),
           ),
           validator: (value) {
             if (value == null || value.trim().isEmpty) {
-              return 'Preencha o campo $label';
+              return _deckTr(
+                'Preencha o campo $label',
+                'Fill in the $label field',
+                'Completa el campo $label',
+              );
             }
 
             return null;
@@ -837,11 +983,11 @@ class _FlashcardFormDialogState extends State<_FlashcardFormDialog> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      backgroundColor: lightPurple,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 440),
+        constraints: BoxConstraints(maxWidth: 440),
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
           child: Form(
@@ -857,25 +1003,25 @@ class _FlashcardFormDialogState extends State<_FlashcardFormDialog> {
                       width: 44,
                       height: 44,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFECE7FF),
+                        color: Color(0xFFECE7FF),
                         borderRadius: BorderRadius.circular(14),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.style_rounded,
                         color: primaryPurple,
                         size: 25,
                       ),
                     ),
 
-                    const SizedBox(width: 12),
+                    SizedBox(width: 12),
 
                     Expanded(
                       child: Text(
                         widget.title,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 21,
                           fontWeight: FontWeight.bold,
-                          color: Colors.black87,
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                     ),
@@ -884,15 +1030,19 @@ class _FlashcardFormDialogState extends State<_FlashcardFormDialog> {
                       onPressed: () {
                         Navigator.pop(context);
                       },
-                      icon: const Icon(Icons.close_rounded, color: Colors.grey),
+                      icon: Icon(Icons.close_rounded, color: Colors.grey),
                     ),
                   ],
                 ),
 
-                const SizedBox(height: 10),
+                SizedBox(height: 10),
 
-                const Text(
-                  'Preencha a pergunta e a resposta para adicionar um novo card ao seu deck.',
+                Text(
+                  _deckTr(
+                    'Preencha a pergunta e a resposta para adicionar um novo card ao seu deck.',
+                    'Enter a question and answer to add a new card to your deck.',
+                    'Escribe una pregunta y respuesta para añadir una tarjeta al mazo.',
+                  ),
                   style: TextStyle(
                     fontSize: 13,
                     color: Colors.grey,
@@ -900,29 +1050,37 @@ class _FlashcardFormDialogState extends State<_FlashcardFormDialog> {
                   ),
                 ),
 
-                const SizedBox(height: 26),
+                SizedBox(height: 26),
 
                 // CAMPO PERGUNTA
                 _buildFlashcardField(
-                  label: 'Pergunta',
-                  hint: 'Digite sua pergunta aqui...',
+                  label: _deckTr('Pergunta', 'Question', 'Pregunta'),
+                  hint: _deckTr(
+                    'Digite sua pergunta aqui...',
+                    'Enter your question here...',
+                    'Escribe tu pregunta aquí...',
+                  ),
                   controller: questionController,
                   icon: Icons.help_outline_rounded,
                   maxLines: 3,
                 ),
 
-                const SizedBox(height: 20),
+                SizedBox(height: 20),
 
                 // CAMPO RESPOSTA
                 _buildFlashcardField(
-                  label: 'Resposta',
-                  hint: 'Digite a resposta aqui...',
+                  label: _deckTr('Resposta', 'Answer', 'Respuesta'),
+                  hint: _deckTr(
+                    'Digite a resposta aqui...',
+                    'Enter your answer here...',
+                    'Escribe tu respuesta aquí...',
+                  ),
                   controller: answerController,
                   icon: Icons.lightbulb_outline_rounded,
                   maxLines: 3,
                 ),
 
-                const SizedBox(height: 28),
+                SizedBox(height: 28),
 
                 // BOTÕES
                 Row(
@@ -934,17 +1092,14 @@ class _FlashcardFormDialogState extends State<_FlashcardFormDialog> {
                         },
                         style: OutlinedButton.styleFrom(
                           foregroundColor: primaryPurple,
-                          side: const BorderSide(
-                            color: borderPurple,
-                            width: 1.5,
-                          ),
+                          side: BorderSide(color: borderPurple, width: 1.5),
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
                           ),
                         ),
-                        child: const Text(
-                          'Cancelar',
+                        child: Text(
+                          _deckTr('Cancelar', 'Cancel', 'Cancelar'),
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
                             fontSize: 14,
@@ -953,7 +1108,7 @@ class _FlashcardFormDialogState extends State<_FlashcardFormDialog> {
                       ),
                     ),
 
-                    const SizedBox(width: 12),
+                    SizedBox(width: 12),
 
                     Expanded(
                       child: ElevatedButton.icon(
@@ -967,9 +1122,9 @@ class _FlashcardFormDialogState extends State<_FlashcardFormDialog> {
                             borderRadius: BorderRadius.circular(14),
                           ),
                         ),
-                        icon: const Icon(Icons.check_rounded, size: 18),
-                        label: const Text(
-                          'Salvar',
+                        icon: Icon(Icons.check_rounded, size: 18),
+                        label: Text(
+                          _deckTr('Salvar', 'Save', 'Guardar'),
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 14,

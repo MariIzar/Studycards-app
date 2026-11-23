@@ -3,21 +3,30 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!-- Permissão para acessar a câmera -->
     <key>NSCameraUsageDescription</key>
-    <string>O Study Cards usa a câmera para fotografar materiais de estudo.</string>
+    <string>O StudyCards precisa acessar a câmera para fotografar materiais de estudo e criar flashcards.</string>
 
+    <!-- Permissão para acessar a galeria -->
     <key>NSPhotoLibraryUsageDescription</key>
-    <string>O Study Cards acessa fotos escolhidas para gerar flashcards.</string>
+    <string>O StudyCards precisa acessar suas fotos para selecionar materiais de estudo.</string>
 
+    <!-- Permissão para acessar o backend na rede local -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>O StudyCards precisa acessar o servidor de inteligência artificial na rede local para gerar flashcards.</string>
+
+    <!-- Configuração de segurança de rede existente -->
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsArbitraryLoads</key>
         <true/>
     </dict>
 
+    <!-- Configuração de desempenho -->
     <key>CADisableMinimumFrameDurationOnPhone</key>
     <true/>
 
+    <!-- Informações do aplicativo -->
     <key>CFBundleDevelopmentRegion</key>
     <string>$(DEVELOPMENT_LANGUAGE)</string>
 
@@ -51,6 +60,7 @@
     <key>LSRequiresIPhoneOS</key>
     <true/>
 
+    <!-- Configuração das cenas do Flutter -->
     <key>UIApplicationSceneManifest</key>
     <dict>
         <key>UIApplicationSupportsMultipleScenes</key>
@@ -80,12 +90,14 @@
     <key>UIApplicationSupportsIndirectInputEvents</key>
     <true/>
 
+    <!-- Tela de inicialização -->
     <key>UILaunchStoryboardName</key>
     <string>LaunchScreen</string>
 
     <key>UIMainStoryboardFile</key>
     <string>Main</string>
 
+    <!-- Orientações permitidas no iPhone -->
     <key>UISupportedInterfaceOrientations</key>
     <array>
         <string>UIInterfaceOrientationPortrait</string>
@@ -93,6 +105,7 @@
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
 
+    <!-- Orientações permitidas no iPad -->
     <key>UISupportedInterfaceOrientations~ipad</key>
     <array>
         <string>UIInterfaceOrientationPortrait</string>

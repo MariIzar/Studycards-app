@@ -46,3 +46,34 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+# =====================================
+# StudyCards - Backend Node.js
+# =====================================
+
+**/node_modules/
+**/.env
+**/.env.*
+!**/.env.example
+
+# Builds e arquivos gerados
+**/build/
+**/dist/
+**/coverage/
+
+# Arquivos temporários
+*.zip
+*.tmp
+*.bak
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Arquivos locais do macOS e Xcode
+**/.DS_Store
+**/DerivedData/
+**/xcuserdata/
+# Logs de execução do Flutter
+flutter_log.txt

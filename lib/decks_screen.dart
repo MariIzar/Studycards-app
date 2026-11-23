@@ -1,768 +1,804 @@
 import 'package:flutter/material.dart';
 
+import 'language_controller.dart';
+
 import 'main.dart' show routeObserver;
 import 'banco_de_dados/auth_helper.dart';
 import 'banco_de_dados/sql_helper.dart';
 
 class DecksScreen extends StatefulWidget {
-  const DecksScreen({super.key});
+  DecksScreen({super.key});
 
   @override
   State<DecksScreen> createState() => _DecksScreenState();
 }
 
 class _DecksScreenState extends State<DecksScreen> with RouteAware {
-  int? selectedDeckId;
+  static const Color purple = Color(0xFF7138F5);
+
+  String _tr(String pt, String en, String es) {
+    switch (LanguageController.locale.value.languageCode) {
+      case 'en':
+        return en;
+      case 'es':
+        return es;
+      default:
+        return pt;
+    }
+  }
+
+  static const List<Color> cores = [
+    Color(0xFF7138F5),
+    Color(0xFF16A34A),
+    Color(0xFF0EA5E9),
+    Color(0xFFF59E0B),
+    Color(0xFFEC4899),
+    Color(0xFF14B8A6),
+  ];
+
+  final _buscaCtrl = TextEditingController();
 
   List<Map<String, dynamic>> decks = [];
-  bool isLoading = true;
-  String? errorMessage;
-
-  static const Color primaryPurple = Color(0xFF6C5CE7);
-
-  static const List<Color> deckColors = [
-    Color(0xFF6C4DFF),
-    Color(0xFF2ECC71),
-    Color(0xFF3498DB),
-    Color(0xFFF1C40F),
-    Color(0xFFE91E63),
-    Color(0xFF1ABC9C),
-  ];
+  bool carregando = true;
+  String? erro;
+  String busca = '';
 
   @override
   void initState() {
     super.initState();
-    _loadDecks();
+    _carregar();
+    _buscaCtrl.addListener(_atualizarBusca);
+  }
+
+  void _atualizarBusca() {
+    if (mounted) {
+      setState(() => busca = _buscaCtrl.text.toLowerCase().trim());
+    }
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-
-    final route = ModalRoute.of(context);
-
-    if (route != null) {
+    final rota = ModalRoute.of(context);
+    if (rota != null) {
       routeObserver.unsubscribe(this);
-      routeObserver.subscribe(this, route);
+      routeObserver.subscribe(this, rota);
     }
   }
 
   @override
   void didPopNext() {
-    _loadDecks();
+    _carregar();
   }
 
   @override
   void dispose() {
     routeObserver.unsubscribe(this);
+    _buscaCtrl.removeListener(_atualizarBusca);
+    _buscaCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _loadDecks() async {
+  Future<void> _carregar() async {
     if (!mounted) return;
-
     setState(() {
-      isLoading = true;
-      errorMessage = null;
+      carregando = true;
+      erro = null;
     });
 
     try {
-      final result = await SQLHelper.pegaDecks(usuarioId: Sessao.usuarioId);
-
+      final resultado = await SQLHelper.pegaDecks(usuarioId: Sessao.usuarioId);
       if (!mounted) return;
 
       setState(() {
-        decks = result;
-        isLoading = false;
+        decks = resultado;
+        carregando = false;
       });
     } catch (e) {
       if (!mounted) return;
-
       setState(() {
-        errorMessage = 'Erro ao carregar decks: $e';
-        isLoading = false;
+        carregando = false;
+        erro = _tr(
+          'Não foi possível carregar os decks.',
+          'Could not load decks.',
+          'No se pudieron cargar los mazos.',
+        );
       });
-
       debugPrint('Erro ao carregar decks: $e');
     }
   }
 
-  Future<void> _openCreateDeck() async {
-    await Navigator.pushNamed(context, '/create-deck');
-
-    if (!mounted) return;
-
-    await _loadDecks();
+  Future<void> _abrir(String rota, {Object? argumentos}) async {
+    await Navigator.pushNamed(context, rota, arguments: argumentos);
+    if (mounted) await _carregar();
   }
 
-  Future<void> _openDeckDetails(int deckId) async {
-    setState(() {
-      selectedDeckId = deckId;
-    });
-
-    await Navigator.pushNamed(context, '/deck-details', arguments: deckId);
-
+  void _mensagem(String mensagem) {
     if (!mounted) return;
-
-    await _loadDecks();
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(mensagem)));
   }
 
-  void _showMessage(String message) {
-    if (!mounted) return;
+  Future<void> _editar(Map<String, dynamic> deck) async {
+    final id = (deck['id'] as num).toInt();
+    final nome = deck['title']?.toString() ?? '';
+    final corAtual = (deck['color'] as num?)?.toInt() ?? 0xFF7138F5;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
-    );
-  }
-
-  Future<void> _editDeck(Map<String, dynamic> deck) async {
-    final int deckId = (deck['id'] as num).toInt();
-
-    final String originalName = deck['title']?.toString() ?? '';
-
-    final int originalColor = (deck['color'] as num?)?.toInt() ?? 0xFF6C4DFF;
-
-    final result = await showDialog<Map<String, dynamic>>(
+    final resultado = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) {
-        return _EditDeckDialog(
-          initialName: originalName,
-          initialColor: originalColor,
-          colors: deckColors,
-        );
-      },
+      builder: (_) =>
+          _EditarDeckDialog(nomeInicial: nome, corInicial: corAtual),
     );
 
-    if (!mounted || result == null) return;
+    if (!mounted || resultado == null) return;
 
     try {
-      final updatedRows = await SQLHelper.atualizaDeck(
-        deckId,
-        result['title'] as String,
-        cor: result['color'] as int,
+      final alterados = await SQLHelper.atualizaDeck(
+        id,
+        resultado['title'] as String,
+        cor: resultado['color'] as int,
       );
 
       if (!mounted) return;
 
-      if (updatedRows > 0) {
-        await _loadDecks();
-        _showMessage('Deck atualizado com sucesso!');
+      if (alterados > 0) {
+        await _carregar();
+        _mensagem(
+          _tr(
+            'Deck atualizado com sucesso!',
+            'Deck updated successfully!',
+            '¡Mazo actualizado correctamente!',
+          ),
+        );
       } else {
-        _showMessage('Deck não encontrado.');
+        _mensagem(
+          _tr('Deck não encontrado.', 'Deck not found.', 'Mazo no encontrado.'),
+        );
       }
     } catch (e) {
-      _showMessage('Erro ao editar deck: $e');
+      _mensagem(
+        _tr(
+          'Não foi possível editar o deck.',
+          'Could not edit the deck.',
+          'No se pudo editar el mazo.',
+        ),
+      );
     }
   }
 
-  Future<void> _deleteDeck(Map<String, dynamic> deck) async {
-    final int deckId = (deck['id'] as num).toInt();
+  Future<void> _excluir(Map<String, dynamic> deck) async {
+    final id = (deck['id'] as num).toInt();
+    final nome =
+        deck['title']?.toString() ?? _tr('Sem nome', 'Untitled', 'Sin nombre');
 
-    final String deckName = deck['title']?.toString() ?? 'Sem nome';
-
-    final bool? confirmed = await showDialog<bool>(
+    final confirmado = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+      builder: (dialogContext) => AlertDialog(
+        title: Text(_tr('Excluir deck?', 'Delete deck?', '¿Eliminar mazo?')),
+        content: Text(
+          _tr(
+            'Deseja excluir \"$nome\"?\n\nTodos os flashcards deste deck serão excluídos. Essa ação não pode ser desfeita.',
+            'Delete \"$nome\"?\n\nAll flashcards in this deck will be deleted. This cannot be undone.',
+            '¿Eliminar \"$nome\"?\n\nSe eliminarán todas las tarjetas de este mazo. Esta acción no se puede deshacer.',
           ),
-          title: const Text(
-            'Excluir deck?',
-            style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(_tr('Cancelar', 'Cancel', 'Cancelar')),
           ),
-          content: Text(
-            'Deseja realmente excluir "$deckName"?\n\n'
-            'Todos os flashcards deste deck também '
-            'serão excluídos. Essa ação não pode '
-            'ser desfeita.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext, false);
-              },
-              child: const Text('Cancelar'),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(
+              _tr('Excluir', 'Delete', 'Eliminar'),
+              style: TextStyle(color: Colors.red),
             ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(dialogContext, true);
-              },
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-              child: const Text(
-                'Excluir',
-                style: TextStyle(color: Colors.white),
-              ),
-            ),
-          ],
-        );
-      },
+          ),
+        ],
+      ),
     );
 
-    if (confirmed != true) return;
+    if (confirmado != true || !mounted) return;
 
     try {
-      await SQLHelper.apagaDeck(deckId);
-
+      await SQLHelper.apagaDeck(id);
       if (!mounted) return;
 
-      final remaining = await SQLHelper.pegaUmDeck(deckId);
-
+      final restante = await SQLHelper.pegaUmDeck(id);
       if (!mounted) return;
 
-      if (remaining.isEmpty) {
-        if (selectedDeckId == deckId) {
-          selectedDeckId = null;
-        }
-
-        await _loadDecks();
-        _showMessage('Deck excluído com sucesso!');
+      if (restante.isEmpty) {
+        await _carregar();
+        _mensagem(
+          _tr(
+            'Deck excluído com sucesso!',
+            'Deck deleted successfully!',
+            '¡Mazo eliminado correctamente!',
+          ),
+        );
       } else {
-        _showMessage('Não foi possível excluir o deck.');
+        _mensagem(
+          _tr(
+            'Não foi possível excluir o deck.',
+            'Could not delete the deck.',
+            'No se pudo eliminar el mazo.',
+          ),
+        );
       }
     } catch (e) {
-      _showMessage('Erro ao excluir deck: $e');
+      _mensagem(
+        _tr(
+          'Não foi possível excluir o deck.',
+          'Could not delete the deck.',
+          'No se pudo eliminar el mazo.',
+        ),
+      );
     }
+  }
+
+  Widget _navItem(
+    IconData icone,
+    String titulo,
+    String rota,
+    Color inativa, {
+    bool ativo = false,
+  }) {
+    return Expanded(
+      child: InkWell(
+        onTap: ativo
+            ? null
+            : () => Navigator.pushReplacementNamed(context, rota),
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 7),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icone, size: 23, color: ativo ? purple : inativa),
+              SizedBox(height: 3),
+              Text(
+                titulo,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: ativo ? purple : inativa,
+                  fontWeight: ativo ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FE),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back, color: Colors.black),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      'Meus decks',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.search, color: Colors.black),
-                    onPressed: () {
-                      _showMessage('Pesquisa em desenvolvimento');
-                    },
-                  ),
-                ],
-              ),
-            ),
+    return ValueListenableBuilder<Locale>(
+      valueListenable: LanguageController.locale,
+      builder: (context, locale, child) {
+        final escuro = Theme.of(context).brightness == Brightness.dark;
+        final fundo = escuro ? Color(0xFF141320) : Color(0xFFF8F7FF);
+        final superficie = escuro ? Color(0xFF242333) : Colors.white;
+        final texto = escuro ? Colors.white : Color(0xFF191B31);
+        final secundario = escuro ? Colors.white60 : Color(0xFF73798B);
+        final borda = escuro ? Color(0xFF454357) : Color(0xFFE7E5F2);
 
-            Expanded(
-              child: RefreshIndicator(
-                onRefresh: _loadDecks,
-                child: SingleChildScrollView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 12,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Seus materiais de estudo',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Organize seus flashcards por decks.',
-                        style: TextStyle(fontSize: 14, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 20),
+        final filtrados = decks.where((deck) {
+          final nome = deck['title']?.toString().toLowerCase() ?? '';
+          return nome.contains(busca);
+        }).toList();
 
-                      if (isLoading)
-                        const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(32),
-                            child: CircularProgressIndicator(
-                              color: primaryPurple,
-                            ),
-                          ),
-                        )
-                      else if (errorMessage != null)
-                        Center(
-                          child: Column(
-                            children: [
-                              Text(
-                                errorMessage!,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(color: Colors.red),
-                              ),
-                              TextButton(
-                                onPressed: _loadDecks,
-                                child: const Text('Tentar novamente'),
-                              ),
-                            ],
-                          ),
-                        )
-                      else if (decks.isEmpty)
-                        _buildEmptyState()
-                      else
-                        ...decks.map((deck) {
-                          final int id = (deck['id'] as num).toInt();
+        Widget cartao(Map<String, dynamic> deck) {
+          final id = (deck['id'] as num).toInt();
+          final nome =
+              deck['title']?.toString() ??
+              _tr('Sem nome', 'Untitled', 'Sin nombre');
+          final quantidade = (deck['cards_count'] as num?)?.toInt() ?? 0;
+          final cor = Color((deck['color'] as num?)?.toInt() ?? 0xFF7138F5);
 
-                          final String title =
-                              deck['title']?.toString() ?? 'Sem nome';
-
-                          final int count =
-                              (deck['cards_count'] as num?)?.toInt() ?? 0;
-
-                          final int colorValue =
-                              (deck['color'] as num?)?.toInt() ?? 0xFF6C4DFF;
-
-                          return _buildDeckItem(
-                            id: id,
-                            title: title,
-                            deckColor: Color(colorValue),
-                            cardsCount:
-                                '$count ${count == 1 ? 'card' : 'cards'}',
-                            onTap: () => _openDeckDetails(id),
-                            onEdit: () => _editDeck(deck),
-                            onDelete: () => _deleteDeck(deck),
-                          );
-                        }),
-
-                      const SizedBox(height: 20),
-
-                      SizedBox(
-                        width: double.infinity,
-                        height: 52,
-                        child: ElevatedButton(
-                          onPressed: _openCreateDeck,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: primaryPurple,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                          child: const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.add, color: Colors.white),
-                              SizedBox(width: 8),
-                              Text(
-                                'Criar novo deck',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black12,
-                    blurRadius: 10,
-                    offset: Offset(0, -2),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  InkWell(
-                    onTap: () {
-                      Navigator.pushReplacementNamed(context, '/home');
-                    },
-                    child: _buildNavItem(Icons.home_outlined, 'Início'),
-                  ),
-                  _buildNavItem(Icons.style, 'Decks', active: true),
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.pushNamed(context, '/create-flashcards');
-                    },
-                    child: Container(
-                      width: 54,
-                      height: 54,
-                      decoration: const BoxDecoration(
-                        color: primaryPurple,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.add,
-                        color: Colors.white,
-                        size: 28,
-                      ),
-                    ),
-                  ),
-                  InkWell(
-                    onTap: () {
-                      Navigator.pushReplacementNamed(context, '/progress');
-                    },
-                    child: _buildNavItem(Icons.bar_chart_outlined, 'Progresso'),
-                  ),
-                  InkWell(
-                    onTap: () {
-                      Navigator.pushReplacementNamed(context, '/profile');
-                    },
-                    child: _buildNavItem(Icons.person_outline, 'Perfil'),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: const Column(
-        children: [
-          Icon(Icons.style_outlined, size: 52, color: primaryPurple),
-          SizedBox(height: 16),
-          Text(
-            'Nenhum deck criado ainda',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
-            ),
-          ),
-          SizedBox(height: 8),
-          Text(
-            'Crie seu primeiro deck para organizar seus estudos.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 14, color: Colors.grey),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDeckItem({
-    required int id,
-    required String title,
-    required Color deckColor,
-    required String cardsCount,
-    required VoidCallback onTap,
-    required VoidCallback onEdit,
-    required VoidCallback onDelete,
-  }) {
-    final bool isSelected = selectedDeckId == id;
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: deckColor.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isSelected ? deckColor : deckColor.withOpacity(0.35),
-          width: 1.5,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: deckColor.withOpacity(isSelected ? 0.15 : 0.05),
-            blurRadius: isSelected ? 12 : 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: InkWell(
+          return Container(
+            margin: EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: superficie,
               borderRadius: BorderRadius.circular(16),
-              onTap: onTap,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 16,
+              border: Border.all(color: borda),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: escuro ? 0 : 0.04),
+                  blurRadius: 9,
+                  offset: Offset(0, 3),
                 ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: deckColor,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(Icons.style, color: Colors.white),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+              ],
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () => _abrir('/deck-details', argumentos: id),
+                    borderRadius: BorderRadius.circular(16),
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(16, 18, 4, 18),
+                      child: Row(
                         children: [
-                          Text(
-                            title,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: deckColor,
+                          Container(
+                            width: 14,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: cor,
+                              borderRadius: BorderRadius.circular(9),
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            cardsCount,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: Colors.black54,
+                          SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  nome,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: texto,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                SizedBox(height: 5),
+                                Text(
+                                  '$quantidade ${quantidade == 1 ? _tr('card', 'card', 'tarjeta') : _tr('cards', 'cards', 'tarjetas')}',
+                                  style: TextStyle(
+                                    color: secundario,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              ],
                             ),
+                          ),
+                          Icon(Icons.chevron_right, color: texto, size: 22),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                PopupMenuButton<String>(
+                  tooltip: _tr(
+                    'Opções do deck',
+                    'Deck options',
+                    'Opciones del mazo',
+                  ),
+                  icon: Icon(Icons.more_vert, color: secundario),
+                  onSelected: (opcao) {
+                    if (opcao == 'editar') _editar(deck);
+                    if (opcao == 'excluir') _excluir(deck);
+                  },
+                  itemBuilder: (_) => [
+                    PopupMenuItem(
+                      value: 'editar',
+                      child: Row(
+                        children: [
+                          Icon(Icons.edit_outlined, size: 20),
+                          SizedBox(width: 10),
+                          Text(_tr('Editar', 'Edit', 'Editar')),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'excluir',
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.delete_outline,
+                            color: Colors.red,
+                            size: 20,
+                          ),
+                          SizedBox(width: 10),
+                          Text(
+                            _tr('Excluir', 'Delete', 'Eliminar'),
+                            style: TextStyle(color: Colors.red),
                           ),
                         ],
                       ),
                     ),
-                    Icon(Icons.chevron_right, color: deckColor, size: 22),
                   ],
                 ),
-              ),
+              ],
+            ),
+          );
+        }
+
+        return Scaffold(
+          backgroundColor: fundo,
+          body: SafeArea(
+            child: Column(
+              children: [
+                Padding(
+                  padding: EdgeInsets.fromLTRB(21, 12, 21, 10),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        onPressed: () {
+                          if (Navigator.canPop(context)) {
+                            Navigator.pop(context);
+                          } else {
+                            Navigator.pushReplacementNamed(context, '/home');
+                          }
+                        },
+                        icon: Icon(Icons.arrow_back, color: texto),
+                      ),
+                      Expanded(
+                        child: Text(
+                          _tr('Meus decks', 'My decks', 'Mis mazos'),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: texto,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      SizedBox(width: 48),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: RefreshIndicator(
+                    color: purple,
+                    onRefresh: _carregar,
+                    child: ListView(
+                      physics: AlwaysScrollableScrollPhysics(),
+                      padding: EdgeInsets.fromLTRB(21, 8, 21, 25),
+                      children: [
+                        Text(
+                          _tr(
+                            'Seus materiais de estudo',
+                            'Your study materials',
+                            'Tus materiales de estudio',
+                          ),
+                          style: TextStyle(
+                            color: texto,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          _tr(
+                            'Organize seus flashcards por matéria.',
+                            'Organize your flashcards by subject.',
+                            'Organiza tus tarjetas por asignatura.',
+                          ),
+                          style: TextStyle(color: secundario, fontSize: 16),
+                        ),
+                        SizedBox(height: 16),
+                        TextField(
+                          controller: _buscaCtrl,
+                          style: TextStyle(color: texto),
+                          decoration: InputDecoration(
+                            hintText: _tr(
+                              'Buscar decks',
+                              'Search decks',
+                              'Buscar mazos',
+                            ),
+                            hintStyle: TextStyle(color: secundario),
+                            filled: true,
+                            fillColor: superficie,
+                            prefixIcon: Icon(Icons.search, color: purple),
+                            suffixIcon: busca.isEmpty
+                                ? null
+                                : IconButton(
+                                    icon: Icon(Icons.close, color: secundario),
+                                    onPressed: _buscaCtrl.clear,
+                                  ),
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 15,
+                              vertical: 17,
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: BorderSide(color: borda),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: BorderSide(color: purple, width: 1.5),
+                            ),
+                          ),
+                        ),
+                        SizedBox(height: 13),
+                        if (carregando)
+                          Padding(
+                            padding: EdgeInsets.all(25),
+                            child: Center(
+                              child: CircularProgressIndicator(color: purple),
+                            ),
+                          )
+                        else if (erro != null)
+                          TextButton(
+                            onPressed: _carregar,
+                            child: Text(
+                              '${erro ?? ''} ${_tr('Tentar novamente', 'Try again', 'Intentar de nuevo')}',
+                            ),
+                          )
+                        else if (filtrados.isEmpty)
+                          Padding(
+                            padding: EdgeInsets.symmetric(vertical: 30),
+                            child: Column(
+                              children: [
+                                Icon(
+                                  Icons.style_outlined,
+                                  size: 45,
+                                  color: secundario,
+                                ),
+                                SizedBox(height: 10),
+                                Text(
+                                  busca.isNotEmpty
+                                      ? _tr(
+                                          'Nenhum deck encontrado.',
+                                          'No decks found.',
+                                          'No se encontraron mazos.',
+                                        )
+                                      : _tr(
+                                          'Nenhum deck criado ainda.',
+                                          'No decks created yet.',
+                                          'Todavía no has creado mazos.',
+                                        ),
+                                  style: TextStyle(
+                                    color: texto,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        else
+                          ...filtrados.map(cartao),
+                        SizedBox(height: 12),
+                        SizedBox(
+                          height: 57,
+                          child: ElevatedButton.icon(
+                            onPressed: () => _abrir('/create-deck'),
+                            icon: Icon(Icons.add, color: Colors.white),
+                            label: Text(
+                              _tr(
+                                'Criar novo deck',
+                                'Create new deck',
+                                'Crear nuevo mazo',
+                              ),
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: purple,
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Container(
+                  decoration: BoxDecoration(
+                    color: superficie,
+                    border: Border(top: BorderSide(color: borda)),
+                  ),
+                  child: Row(
+                    children: [
+                      _navItem(
+                        Icons.home_outlined,
+                        _tr('Início', 'Home', 'Inicio'),
+                        '/home',
+                        secundario,
+                      ),
+                      _navItem(
+                        Icons.style_outlined,
+                        'Decks',
+                        '/decks',
+                        secundario,
+                        ativo: true,
+                      ),
+                      Expanded(
+                        child: Center(
+                          child: InkWell(
+                            onTap: () => _abrir('/create-flashcards'),
+                            customBorder: CircleBorder(),
+                            child: Container(
+                              width: 59,
+                              height: 59,
+                              decoration: BoxDecoration(
+                                color: purple,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.add,
+                                size: 30,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      _navItem(
+                        Icons.bar_chart_outlined,
+                        _tr('Progresso', 'Progress', 'Progreso'),
+                        '/progress',
+                        secundario,
+                      ),
+                      _navItem(
+                        Icons.person_outline,
+                        _tr('Perfil', 'Profile', 'Perfil'),
+                        '/profile',
+                        secundario,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-          PopupMenuButton<String>(
-            tooltip: 'Opções do deck',
-            icon: const Icon(Icons.more_vert, color: Colors.black54),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            onSelected: (value) {
-              if (value == 'edit') {
-                onEdit();
-              } else if (value == 'delete') {
-                onDelete();
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem<String>(
-                value: 'edit',
-                child: Row(
-                  children: [
-                    Icon(Icons.edit_outlined, color: primaryPurple, size: 20),
-                    SizedBox(width: 12),
-                    Text('Editar'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem<String>(
-                value: 'delete',
-                child: Row(
-                  children: [
-                    Icon(Icons.delete_outline, color: Colors.red, size: 20),
-                    SizedBox(width: 12),
-                    Text('Excluir', style: TextStyle(color: Colors.red)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNavItem(IconData icon, String label, {bool active = false}) {
-    final color = active ? primaryPurple : Colors.grey;
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, color: color, size: 24),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: TextStyle(
-            color: color,
-            fontSize: 11,
-            fontWeight: active ? FontWeight.bold : FontWeight.normal,
-          ),
-        ),
-      ],
+        );
+      },
     );
   }
 }
 
-class _EditDeckDialog extends StatefulWidget {
-  final String initialName;
-  final int initialColor;
-  final List<Color> colors;
+class _EditarDeckDialog extends StatefulWidget {
+  final String nomeInicial;
+  final int corInicial;
 
-  const _EditDeckDialog({
-    required this.initialName,
-    required this.initialColor,
-    required this.colors,
-  });
+  _EditarDeckDialog({required this.nomeInicial, required this.corInicial});
 
   @override
-  State<_EditDeckDialog> createState() => _EditDeckDialogState();
+  State<_EditarDeckDialog> createState() => _EditarDeckDialogState();
 }
 
-class _EditDeckDialogState extends State<_EditDeckDialog> {
-  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+class _EditarDeckDialogState extends State<_EditarDeckDialog> {
+  static const Color purple = Color(0xFF7138F5);
 
-  late final TextEditingController _nameController;
+  String _tr(String pt, String en, String es) {
+    switch (LanguageController.locale.value.languageCode) {
+      case 'en':
+        return en;
+      case 'es':
+        return es;
+      default:
+        return pt;
+    }
+  }
 
-  late int _selectedColor;
+  static const List<Color> cores = [
+    Color(0xFF7138F5),
+    Color(0xFF16A34A),
+    Color(0xFF0EA5E9),
+    Color(0xFFF59E0B),
+    Color(0xFFEC4899),
+    Color(0xFF14B8A6),
+  ];
+
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _nomeCtrl;
+  late int _cor;
 
   @override
   void initState() {
     super.initState();
-
-    _nameController = TextEditingController(text: widget.initialName);
-
-    _selectedColor = widget.initialColor;
+    _nomeCtrl = TextEditingController(text: widget.nomeInicial);
+    _cor = widget.corInicial;
   }
 
   @override
   void dispose() {
-    _nameController.dispose();
+    _nomeCtrl.dispose();
     super.dispose();
   }
 
-  void _save() {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
+  void _salvar() {
+    if (!_formKey.currentState!.validate()) return;
 
-    Navigator.pop(context, {
-      'title': _nameController.text.trim(),
-      'color': _selectedColor,
-    });
+    Navigator.pop(context, {'title': _nomeCtrl.text.trim(), 'color': _cor});
   }
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: const Text(
-        'Editar deck',
-        style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
-      ),
-      content: SingleChildScrollView(
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Nome do deck',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _nameController,
-                maxLength: 100,
-                decoration: InputDecoration(
-                  hintText: 'Nome do deck',
-                  filled: true,
-                  fillColor: const Color(0xFFF8F9FE),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
+    return ValueListenableBuilder<Locale>(
+      valueListenable: LanguageController.locale,
+      builder: (context, locale, child) => AlertDialog(
+        title: Text(_tr('Editar deck', 'Edit deck', 'Editar mazo')),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        content: SingleChildScrollView(
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _tr('Nome do deck', 'Deck name', 'Nombre del mazo'),
+                  style: TextStyle(fontWeight: FontWeight.bold),
                 ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Digite um nome para o deck';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'Cor do deck',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: widget.colors.map((color) {
-                  final int colorValue = color.toARGB32();
-
-                  final bool isSelected = _selectedColor == colorValue;
-
-                  return GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _selectedColor = colorValue;
-                      });
-                    },
-                    child: Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: color,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: isSelected
-                              ? Colors.black54
-                              : Colors.transparent,
-                          width: 3,
-                        ),
-                      ),
-                      child: isSelected
-                          ? const Icon(
-                              Icons.check,
-                              color: Colors.white,
-                              size: 20,
-                            )
-                          : null,
+                SizedBox(height: 8),
+                TextFormField(
+                  controller: _nomeCtrl,
+                  maxLength: 100,
+                  decoration: InputDecoration(
+                    border: OutlineInputBorder(),
+                    hintText: _tr(
+                      'Nome do deck',
+                      'Deck name',
+                      'Nombre del mazo',
                     ),
-                  );
-                }).toList(),
-              ),
-            ],
+                  ),
+                  validator: (valor) {
+                    if (valor == null || valor.trim().isEmpty) {
+                      return _tr(
+                        'Digite um nome para o deck',
+                        'Enter a deck name',
+                        'Introduce un nombre para el mazo',
+                      );
+                    }
+                    return null;
+                  },
+                ),
+                SizedBox(height: 12),
+                Text(
+                  _tr('Cor do deck', 'Deck color', 'Color del mazo'),
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                SizedBox(height: 12),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: cores.map((cor) {
+                    final selecionada = _cor == cor.toARGB32();
+
+                    return InkWell(
+                      onTap: () {
+                        setState(() => _cor = cor.toARGB32());
+                      },
+                      customBorder: CircleBorder(),
+                      child: Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: cor,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: selecionada
+                                ? Theme.of(context).colorScheme.onSurface
+                                : Colors.transparent,
+                            width: 2.5,
+                          ),
+                        ),
+                        child: selecionada
+                            ? Icon(Icons.check, color: Colors.white)
+                            : null,
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
           ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(_tr('Cancelar', 'Cancel', 'Cancelar')),
+          ),
+          ElevatedButton(
+            onPressed: _salvar,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: purple,
+              foregroundColor: Colors.white,
+            ),
+            child: Text(_tr('Salvar', 'Save', 'Guardar')),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancelar'),
-        ),
-        ElevatedButton(
-          onPressed: _save,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF6C5CE7),
-          ),
-          child: const Text('Salvar', style: TextStyle(color: Colors.white)),
-        ),
-      ],
     );
   }
 }

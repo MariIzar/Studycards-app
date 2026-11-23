@@ -1,206 +1,290 @@
 import 'package:flutter/material.dart';
 
+import 'language_controller.dart';
+
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
-  @override
-  Widget build(BuildContext context) {
-    const primaryPurple = Color(0xFF6C4DFF);
+  static const Color primaryPurple = Color(0xFF6C4DFF);
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FE),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text(
-          'Configurações',
-          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
-        ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(20.0),
-        children: [
-          // Seção: Conta
-          const Text(
-            'Conta',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                _buildSettingItem(
-                  icon: Icons.person_outline,
-                  title: 'Editar perfil',
-                  onTap: () => Navigator.pushNamed(context, '/edit-profile'),
-                ),
-                const Divider(height: 1),
-                _buildSettingItem(
-                  icon: Icons.lock_outline,
-                  title: 'Alterar senha',
-                  onTap: () => Navigator.pushNamed(context, '/change-password'),
-                ),
-                const Divider(height: 1),
-                _buildSettingItem(
-                  icon: Icons.shield_outlined,
-                  title: 'Privacidade',
-                  onTap: () =>
-                      Navigator.pushNamed(context, '/privacy-settings'),
-                ),
-                const Divider(height: 1),
-                _buildSettingItem(
-                  icon: Icons.star_outline,
-                  title: 'Assinatura',
-                  onTap: () {
-                    // Caso tenha tela de assinatura, pode mapear aqui
-                  },
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
+  String _tr(String pt, String en, String es) {
+    switch (LanguageController.locale.value.languageCode) {
+      case 'en':
+        return en;
+      case 'es':
+        return es;
+      default:
+        return pt;
+    }
+  }
 
-          // Seção: App
-          const Text(
-            'App',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                _buildSettingItem(
-                  icon: Icons.notifications_none_rounded,
-                  title: 'Notificações',
-                  onTap: () =>
-                      Navigator.pushNamed(context, '/notifications-settings'),
-                ),
-                const Divider(height: 1),
-                _buildSettingItem(
-                  icon: Icons.wb_sunny_outlined,
-                  title: 'Aparência',
-                  trailingText: 'Claro',
-                  onTap: () => Navigator.pushNamed(context, '/appearance'),
-                ),
-                const Divider(height: 1),
-                _buildSettingItem(
-                  icon: Icons.language_rounded,
-                  title: 'Idioma',
-                  trailingText: 'Português',
-                  onTap: () => Navigator.pushNamed(context, '/language'),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
+  String _nomeIdioma() {
+    switch (LanguageController.locale.value.languageCode) {
+      case 'en':
+        return 'English';
+      case 'es':
+        return 'Español';
+      default:
+        return 'Português';
+    }
+  }
 
-          // Seção: Sobre
-          const Text(
-            'Sobre',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                _buildSettingItem(
-                  icon: Icons.info_outline_rounded,
-                  title: 'Sobre o StudyCards',
-                  onTap: () => Navigator.pushNamed(context, '/about'),
-                ),
-                const Divider(height: 1),
-                _buildSettingItem(
-                  icon: Icons.help_outline_rounded,
-                  title: 'Ajuda e suporte',
-                  onTap: () => Navigator.pushNamed(context, '/help-support'),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 30),
-        ],
-      ),
-    );
+  void _abrirRota(BuildContext context, String rota) {
+    Navigator.pushNamed(context, rota);
   }
 
   Widget _buildSettingItem({
     required IconData icon,
     required String title,
-    String? trailingText,
+    required Color textColor,
+    required Color secondaryColor,
     required VoidCallback onTap,
+    String? trailingText,
   }) {
     return ListTile(
-      leading: Icon(icon, color: Colors.black87, size: 22),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+      leading: Icon(icon, color: primaryPurple, size: 23),
       title: Text(
         title,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 16,
           fontWeight: FontWeight.w500,
-          color: Colors.black87,
+          color: textColor,
         ),
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (trailingText != null)
-            Text(
-              trailingText,
-              style: const TextStyle(fontSize: 14, color: Colors.grey),
+          if (trailingText != null) ...[
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 110),
+              child: Text(
+                trailingText,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 14, color: secondaryColor),
+              ),
             ),
-          const SizedBox(width: 4),
-          const Icon(Icons.chevron_right, color: Colors.black45, size: 20),
+            const SizedBox(width: 4),
+          ],
+          Icon(Icons.chevron_right, color: secondaryColor, size: 20),
         ],
       ),
       onTap: onTap,
+    );
+  }
+
+  Widget _buildSection({
+    required String title,
+    required List<Widget> items,
+    required Color surface,
+    required Color textColor,
+    required Color secondaryColor,
+    required Color borderColor,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 10),
+          child: Text(
+            title,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: secondaryColor,
+            ),
+          ),
+        ),
+        Container(
+          decoration: BoxDecoration(
+            color: surface,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: borderColor),
+          ),
+          child: Column(
+            children: [
+              for (int i = 0; i < items.length; i++) ...[
+                items[i],
+                if (i < items.length - 1)
+                  Divider(
+                    height: 1,
+                    thickness: 0.7,
+                    indent: 56,
+                    endIndent: 16,
+                    color: borderColor,
+                  ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<Locale>(
+      valueListenable: LanguageController.locale,
+      builder: (context, locale, child) {
+        final dark = Theme.of(context).brightness == Brightness.dark;
+
+        final background = dark
+            ? const Color(0xFF141320)
+            : const Color(0xFFF8F7FF);
+
+        final surface = dark ? const Color(0xFF242333) : Colors.white;
+
+        final textColor = dark ? Colors.white : const Color(0xFF191B31);
+
+        final secondaryColor = dark ? Colors.white60 : const Color(0xFF73798B);
+
+        final borderColor = dark
+            ? const Color(0xFF454357)
+            : const Color(0xFFE7E5F2);
+
+        final appearance = dark
+            ? _tr('Escuro', 'Dark', 'Oscuro')
+            : _tr('Claro', 'Light', 'Claro');
+
+        return Scaffold(
+          backgroundColor: background,
+          appBar: AppBar(
+            backgroundColor: background,
+            foregroundColor: textColor,
+            elevation: 0,
+            centerTitle: true,
+            title: Text(
+              _tr('Configurações', 'Settings', 'Configuración'),
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            ),
+          ),
+          body: SafeArea(
+            child: ListView(
+              padding: const EdgeInsets.all(20),
+              children: [
+                // CONTA
+                _buildSection(
+                  title: _tr('Conta', 'Account', 'Cuenta'),
+                  surface: surface,
+                  textColor: textColor,
+                  secondaryColor: secondaryColor,
+                  borderColor: borderColor,
+                  items: [
+                    _buildSettingItem(
+                      icon: Icons.person_outline,
+                      title: _tr(
+                        'Editar perfil',
+                        'Edit profile',
+                        'Editar perfil',
+                      ),
+                      textColor: textColor,
+                      secondaryColor: secondaryColor,
+                      onTap: () => _abrirRota(context, '/edit-profile'),
+                    ),
+                    _buildSettingItem(
+                      icon: Icons.lock_outline,
+                      title: _tr(
+                        'Alterar senha',
+                        'Change password',
+                        'Cambiar contraseña',
+                      ),
+                      textColor: textColor,
+                      secondaryColor: secondaryColor,
+                      onTap: () => _abrirRota(context, '/change-password'),
+                    ),
+                    _buildSettingItem(
+                      icon: Icons.shield_outlined,
+                      title: _tr('Privacidade', 'Privacy', 'Privacidad'),
+                      textColor: textColor,
+                      secondaryColor: secondaryColor,
+                      onTap: () => _abrirRota(context, '/privacy-settings'),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 24),
+
+                // APP
+                _buildSection(
+                  title: 'App',
+                  surface: surface,
+                  textColor: textColor,
+                  secondaryColor: secondaryColor,
+                  borderColor: borderColor,
+                  items: [
+                    _buildSettingItem(
+                      icon: Icons.notifications_none_rounded,
+                      title: _tr(
+                        'Notificações',
+                        'Notifications',
+                        'Notificaciones',
+                      ),
+                      textColor: textColor,
+                      secondaryColor: secondaryColor,
+                      onTap: () =>
+                          _abrirRota(context, '/notifications-settings'),
+                    ),
+                    _buildSettingItem(
+                      icon: Icons.wb_sunny_outlined,
+                      title: _tr('Aparência', 'Appearance', 'Apariencia'),
+                      trailingText: appearance,
+                      textColor: textColor,
+                      secondaryColor: secondaryColor,
+                      onTap: () => _abrirRota(context, '/appearance'),
+                    ),
+                    _buildSettingItem(
+                      icon: Icons.language_rounded,
+                      title: _tr('Idioma', 'Language', 'Idioma'),
+                      trailingText: _nomeIdioma(),
+                      textColor: textColor,
+                      secondaryColor: secondaryColor,
+                      onTap: () => _abrirRota(context, '/language'),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 24),
+
+                // SOBRE
+                _buildSection(
+                  title: _tr('Sobre', 'About', 'Acerca de'),
+                  surface: surface,
+                  textColor: textColor,
+                  secondaryColor: secondaryColor,
+                  borderColor: borderColor,
+                  items: [
+                    _buildSettingItem(
+                      icon: Icons.info_outline_rounded,
+                      title: _tr(
+                        'Sobre o StudyCards',
+                        'About StudyCards',
+                        'Acerca de StudyCards',
+                      ),
+                      textColor: textColor,
+                      secondaryColor: secondaryColor,
+                      onTap: () => _abrirRota(context, '/about'),
+                    ),
+                    _buildSettingItem(
+                      icon: Icons.help_outline_rounded,
+                      title: _tr(
+                        'Ajuda e suporte',
+                        'Help and support',
+                        'Ayuda y soporte',
+                      ),
+                      textColor: textColor,
+                      secondaryColor: secondaryColor,
+                      onTap: () => _abrirRota(context, '/help-support'),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 30),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

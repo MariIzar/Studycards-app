@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'main.dart' show routeObserver;
 import 'banco_de_dados/auth_helper.dart';
 import 'banco_de_dados/sql_helper.dart';
+import 'language_controller.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -12,39 +13,49 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with RouteAware {
-  static const Color primaryPurple = Color(0xFF6C5CE7);
-  static const Color lightPurple = Color(0xFFDCD6FE);
+  static const purple = Color(0xFF7138F5);
 
-  String? selectedDeckTitle;
   List<Map<String, dynamic>> decks = [];
+  bool carregando = true;
+  String? erro;
 
-  bool isLoadingDecks = true;
-  String? deckError;
+  int pendentes = 0;
+  int total = 0;
+  int dominados = 0;
+  double percentual = 0;
 
-  int pendingCards = 0;
-  int totalCards = 0;
-  int masteredCards = 0;
-  double masteryPercentage = 0;
+  String _tr(String pt, String en, String es) {
+    switch (LanguageController.locale.value.languageCode) {
+      case 'en':
+        return en;
+      case 'es':
+        return es;
+      default:
+        return pt;
+    }
+  }
 
   @override
   void initState() {
     super.initState();
-    _loadHomeData();
+    _carregar();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final route = ModalRoute.of(context);
-    if (route != null) {
+
+    final rota = ModalRoute.of(context);
+
+    if (rota != null) {
       routeObserver.unsubscribe(this);
-      routeObserver.subscribe(this, route);
+      routeObserver.subscribe(this, rota);
     }
   }
 
   @override
   void didPopNext() {
-    _loadHomeData();
+    _carregar();
   }
 
   @override
@@ -53,525 +64,583 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     super.dispose();
   }
 
-  Future<void> _loadHomeData() async {
+  Future<void> _carregar() async {
     if (!mounted) return;
 
     setState(() {
-      isLoadingDecks = true;
-      deckError = null;
+      carregando = true;
+      erro = null;
     });
 
     if (!Sessao.logado) {
       setState(() {
         decks = [];
-        pendingCards = 0;
-        totalCards = 0;
-        masteredCards = 0;
-        masteryPercentage = 0;
-        isLoadingDecks = false;
+        pendentes = 0;
+        total = 0;
+        dominados = 0;
+        percentual = 0;
+        carregando = false;
       });
       return;
     }
 
     try {
-      final results = await Future.wait<dynamic>([
+      final resultados = await Future.wait<dynamic>([
         SQLHelper.pegaDecks(usuarioId: Sessao.usuarioId),
         SQLHelper.pegaEstatisticas(usuarioId: Sessao.usuarioId),
       ]);
 
       if (!mounted) return;
 
-      final loadedDecks = results[0] as List<Map<String, dynamic>>;
-      final stats = results[1] as Map<String, dynamic>;
+      final stats = resultados[1] as Map<String, dynamic>;
 
       setState(() {
-        decks = loadedDecks;
-        pendingCards = (stats['pending_cards'] as num?)?.toInt() ?? 0;
-        totalCards = (stats['total_cards'] as num?)?.toInt() ?? 0;
-        masteredCards = (stats['mastered_cards'] as num?)?.toInt() ?? 0;
-        masteryPercentage =
-            (stats['mastery_percentage'] as num?)?.toDouble() ?? 0;
-        isLoadingDecks = false;
-        deckError = null;
+        decks = resultados[0] as List<Map<String, dynamic>>;
+
+        pendentes = (stats['pending_cards'] as num?)?.toInt() ?? 0;
+
+        total = (stats['total_cards'] as num?)?.toInt() ?? 0;
+
+        dominados = (stats['mastered_cards'] as num?)?.toInt() ?? 0;
+
+        percentual = (stats['mastery_percentage'] as num?)?.toDouble() ?? 0;
+
+        carregando = false;
       });
     } catch (e) {
+      debugPrint('Erro na Home: $e');
+
       if (!mounted) return;
+
       setState(() {
-        isLoadingDecks = false;
-        deckError = 'Não foi possível carregar seus dados.';
+        carregando = false;
+        erro = _tr(
+          'Não foi possível carregar seus estudos.',
+          'Could not load your study data.',
+          'No se pudieron cargar tus estudios.',
+        );
       });
-      debugPrint('Erro ao carregar Home: $e');
     }
   }
 
-  Future<void> _openDeck(int id) async {
-    await Navigator.pushNamed(context, '/deck-details', arguments: id);
-    if (mounted) await _loadHomeData();
+  Future<void> _abrir(String rota, {Object? argumentos}) async {
+    await Navigator.pushNamed(context, rota, arguments: argumentos);
+
+    if (mounted) {
+      await _carregar();
+    }
   }
 
-  Future<void> _openAllDecks() async {
-    await Navigator.pushNamed(context, '/decks');
-    if (mounted) await _loadHomeData();
-  }
-
-  Future<void> _startReview() async {
-    if (Sessao.logado && pendingCards == 0) return;
-    await Navigator.pushNamed(context, '/study');
-    if (mounted) await _loadHomeData();
-  }
-
-  Future<void> _openRoute(String route) async {
-    await Navigator.pushNamed(context, route);
-    if (mounted) await _loadHomeData();
+  Widget _itemNav(
+    IconData icone,
+    String titulo,
+    String rota,
+    Color corInativa, {
+    bool ativo = false,
+  }) {
+    return Expanded(
+      child: InkWell(
+        onTap: ativo ? null : () => _abrir(rota),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icone, size: 23, color: ativo ? purple : corInativa),
+              const SizedBox(height: 3),
+              Text(
+                titulo,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: ativo ? purple : corInativa,
+                  fontWeight: ativo ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FE),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: RefreshIndicator(
-                color: primaryPurple,
-                onRefresh: _loadHomeData,
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.all(24),
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                Sessao.logado
-                                    ? 'Olá, ${Sessao.primeiroNome}!'
-                                    : 'Olá, estudante!',
-                                style: const TextStyle(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.black,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              const Text(
-                                'Pronta para aprender hoje?',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(
-                            Icons.help_outline_rounded,
-                            size: 28,
-                          ),
-                          onPressed: () => _openRoute('/about'),
-                        ),
-                      ],
-                    ),
+    return ValueListenableBuilder<Locale>(
+      valueListenable: LanguageController.locale,
+      builder: (context, locale, child) {
+        final escuro = Theme.of(context).brightness == Brightness.dark;
 
-                    const SizedBox(height: 24),
+        final fundo = escuro
+            ? const Color(0xFF141320)
+            : const Color(0xFFF8F7FF);
 
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: primaryPurple,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: primaryPurple.withOpacity(0.3),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
+        final superficie = escuro ? const Color(0xFF242333) : Colors.white;
+
+        final texto = escuro ? Colors.white : const Color(0xFF191B31);
+
+        final secundario = escuro ? Colors.white60 : const Color(0xFF73798B);
+
+        final borda = escuro
+            ? const Color(0xFF454357)
+            : const Color(0xFFE7E5F2);
+
+        Widget cartaoDeck(Map<String, dynamic> deck) {
+          final id = (deck['id'] as num).toInt();
+
+          final titulo =
+              deck['title']?.toString() ??
+              _tr('Sem nome', 'Untitled', 'Sin nombre');
+
+          final quantidade = (deck['cards_count'] as num?)?.toInt() ?? 0;
+
+          final cor = Color((deck['color'] as num?)?.toInt() ?? 0xFF7138F5);
+
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Material(
+              color: superficie,
+              borderRadius: BorderRadius.circular(16),
+              child: InkWell(
+                onTap: () => _abrir('/deck-details', argumentos: id),
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 18,
+                  ),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: borda),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(
+                          alpha: escuro ? 0 : 0.04,
+                        ),
+                        blurRadius: 9,
+                        offset: const Offset(0, 3),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Revisão de hoje',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.baseline,
-                            textBaseline: TextBaseline.alphabetic,
-                            children: [
-                              Text(
-                                isLoadingDecks ? '...' : '$pendingCards',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 48,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              const Flexible(
-                                child: Text(
-                                  'cards pendentes',
-                                  style: TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            isLoadingDecks
-                                ? 'Carregando revisões...'
-                                : pendingCards == 0
-                                ? 'Tudo em dia! Nenhuma revisão pendente.'
-                                : 'Você tem $pendingCards ${pendingCards == 1 ? 'flashcard' : 'flashcards'} para revisar.',
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.white,
-                              foregroundColor: primaryPurple,
-                              elevation: 0,
-                              disabledBackgroundColor: Colors.white54,
-                              disabledForegroundColor: Colors.white70,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
-                              ),
-                            ),
-                            onPressed:
-                                isLoadingDecks ||
-                                    deckError != null ||
-                                    pendingCards == 0
-                                ? null
-                                : _startReview,
-                            icon: const Icon(
-                              Icons.play_arrow_rounded,
-                              size: 20,
-                            ),
-                            label: Text(
-                              pendingCards == 0
-                                  ? 'Nenhuma revisão pendente'
-                                  : 'Começar revisão',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 28),
-
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Seus decks',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black,
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: _openAllDecks,
-                          child: const Text(
-                            'Ver todos',
-                            style: TextStyle(color: primaryPurple),
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 8),
-
-                    if (isLoadingDecks)
-                      const Padding(
-                        padding: EdgeInsets.all(24),
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            color: primaryPurple,
-                          ),
-                        ),
-                      )
-                    else if (deckError != null)
-                      TextButton(
-                        onPressed: _loadHomeData,
-                        child: Text('$deckError Toque para tentar novamente.'),
-                      )
-                    else if (decks.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 20),
-                        child: Text(
-                          'Você ainda não criou nenhum deck.',
-                          style: TextStyle(color: Colors.grey, fontSize: 14),
-                        ),
-                      )
-                    else
-                      ...decks.take(3).map((deck) {
-                        final int id = (deck['id'] as num).toInt();
-
-                        final int count =
-                            (deck['cards_count'] as num?)?.toInt() ?? 0;
-
-                        final int colorValue =
-                            (deck['color'] as num?)?.toInt() ?? 0xFF6C4DFF;
-
-                        return _buildInteractiveDeckCard(
-                          title: deck['title']?.toString() ?? 'Sem nome',
-                          cardsCount: '$count ${count == 1 ? 'card' : 'cards'}',
-                          deckColor: Color(colorValue),
-                          onTap: () => _openDeck(id),
-                        );
-                      }),
-
-                    const SizedBox(height: 20),
-
-                    GestureDetector(
-                      onTap: () => _openRoute('/progress'),
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(20),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 14,
+                        height: 40,
                         decoration: BoxDecoration(
-                          color: lightPurple,
-                          borderRadius: BorderRadius.circular(20),
+                          color: cor,
+                          borderRadius: BorderRadius.circular(9),
                         ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              'Seu progresso',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.black87,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.baseline,
-                              textBaseline: TextBaseline.alphabetic,
-                              children: [
-                                Text(
-                                  isLoadingDecks
-                                      ? '...'
-                                      : '${masteryPercentage.round()}%',
-                                  style: const TextStyle(
-                                    fontSize: 36,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.black,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                const Expanded(
-                                  child: Text(
-                                    'dos seus cards dominados',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: Colors.black54,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
-                              child: LinearProgressIndicator(
-                                value: (masteryPercentage / 100).clamp(
-                                  0.0,
-                                  1.0,
-                                ),
-                                minHeight: 8,
-                                backgroundColor: Colors.white54,
-                                valueColor: const AlwaysStoppedAnimation<Color>(
-                                  primaryPurple,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
                             Text(
-                              '$masteredCards de $totalCards cards dominados',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: Colors.black54,
+                              titulo,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: texto,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
                               ),
+                            ),
+                            const SizedBox(height: 5),
+                            Text(
+                              '$quantidade ${quantidade == 1 ? _tr('card', 'card', 'tarjeta') : _tr('cards', 'cards', 'tarjetas')}',
+                              style: TextStyle(color: secundario, fontSize: 15),
                             ),
                           ],
                         ),
                       ),
-                    ),
-
-                    const SizedBox(height: 30),
-                  ],
+                      Icon(Icons.chevron_right, color: texto),
+                    ],
+                  ),
                 ),
               ),
             ),
+          );
+        }
 
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black12,
-                    blurRadius: 10,
-                    offset: Offset(0, -2),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _buildNavItem(Icons.home, 'Início', active: true),
-                  GestureDetector(
-                    onTap: _openAllDecks,
-                    child: _buildNavItem(Icons.style_outlined, 'Decks'),
-                  ),
-                  GestureDetector(
-                    onTap: () => _openRoute('/create-flashcards'),
-                    child: Container(
-                      width: 54,
-                      height: 54,
-                      decoration: const BoxDecoration(
-                        color: primaryPurple,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.add,
-                        color: Colors.white,
-                        size: 28,
-                      ),
+        return Scaffold(
+          backgroundColor: fundo,
+          body: SafeArea(
+            child: Column(
+              children: [
+                Expanded(
+                  child: RefreshIndicator(
+                    color: purple,
+                    onRefresh: _carregar,
+                    child: ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(21, 24, 21, 25),
+                      children: [
+                        // CABEÇALHO
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    Sessao.logado
+                                        ? _tr(
+                                            'Olá, ${Sessao.primeiroNome}!',
+                                            'Hello, ${Sessao.primeiroNome}!',
+                                            '¡Hola, ${Sessao.primeiroNome}!',
+                                          )
+                                        : _tr(
+                                            'Olá, estudante!',
+                                            'Hello, student!',
+                                            '¡Hola, estudiante!',
+                                          ),
+                                    style: TextStyle(
+                                      color: texto,
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    _tr(
+                                      'Hora de estudar um pouco?',
+                                      'Ready to study?',
+                                      '¿Es hora de estudiar?',
+                                    ),
+                                    style: TextStyle(
+                                      color: secundario,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: _tr(
+                                'Notificações',
+                                'Notifications',
+                                'Notificaciones',
+                              ),
+                              onPressed: () =>
+                                  _abrir('/notifications-settings'),
+                              icon: Icon(
+                                Icons.notifications_none_outlined,
+                                color: texto,
+                              ),
+                            ),
+                            InkWell(
+                              onTap: () => _abrir('/profile'),
+                              borderRadius: BorderRadius.circular(14),
+                              child: SizedBox(
+                                width: 52,
+                                height: 52,
+                                child: Image.asset(
+                                  'assets/images/studycards_logo.png',
+                                  width: 52,
+                                  height: 52,
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 18),
+
+                        // REVISÃO DE HOJE
+                        Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: purple,
+                            borderRadius: BorderRadius.circular(22),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _tr(
+                                  'Revisão de hoje',
+                                  "Today's review",
+                                  'Repaso de hoy',
+                                ),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                carregando ? '...' : '$pendentes',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 46,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 9),
+                              ElevatedButton(
+                                onPressed:
+                                    carregando || erro != null || pendentes == 0
+                                    ? null
+                                    : () => _abrir('/study'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.white,
+                                  foregroundColor: purple,
+                                  disabledBackgroundColor: Colors.white70,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 20,
+                                    vertical: 14,
+                                  ),
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(13),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      pendentes == 0 && !carregando
+                                          ? _tr(
+                                              'Tudo revisado!',
+                                              'All reviewed!',
+                                              '¡Todo repasado!',
+                                            )
+                                          : _tr(
+                                              'Começar revisão',
+                                              'Start review',
+                                              'Comenzar repaso',
+                                            ),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    const Icon(Icons.chevron_right, size: 20),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 18),
+
+                        // SEUS DECKS
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _tr('Seus decks', 'Your decks', 'Tus mazos'),
+                                style: TextStyle(
+                                  color: texto,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () => _abrir('/decks'),
+                              child: Text(
+                                _tr('Ver todos', 'See all', 'Ver todos'),
+                                style: const TextStyle(
+                                  color: purple,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 5),
+
+                        if (carregando)
+                          const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(20),
+                              child: CircularProgressIndicator(color: purple),
+                            ),
+                          )
+                        else if (erro != null)
+                          TextButton(
+                            onPressed: _carregar,
+                            child: Text(
+                              '${_tr('Não foi possível carregar seus estudos.', 'Could not load your study data.', 'No se pudieron cargar tus estudios.')} ${_tr('Tentar novamente', 'Try again', 'Intentar de nuevo')}',
+                            ),
+                          )
+                        else if (decks.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 20),
+                            child: Text(
+                              _tr(
+                                'Você ainda não criou nenhum deck.',
+                                "You haven't created any decks yet.",
+                                'Todavía no has creado ningún mazo.',
+                              ),
+                              style: TextStyle(color: secundario),
+                            ),
+                          )
+                        else
+                          ...decks.take(3).map(cartaoDeck),
+
+                        const SizedBox(height: 2),
+
+                        // PROGRESSO
+                        InkWell(
+                          onTap: () => _abrir('/progress'),
+                          borderRadius: BorderRadius.circular(17),
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: escuro
+                                  ? const Color(0xFF302747)
+                                  : const Color(0xFFEEE8FF),
+                              borderRadius: BorderRadius.circular(17),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _tr(
+                                    'Seu progresso',
+                                    'Your progress',
+                                    'Tu progreso',
+                                  ),
+                                  style: TextStyle(
+                                    color: texto,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  spacing: 12,
+                                  children: [
+                                    Text(
+                                      carregando
+                                          ? '...'
+                                          : '${percentual.round()}%',
+                                      style: TextStyle(
+                                        color: texto,
+                                        fontSize: 40,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    Text(
+                                      _tr(
+                                        'dos seus cards dominados',
+                                        'of your cards mastered',
+                                        'de tus tarjetas dominadas',
+                                      ),
+                                      style: const TextStyle(
+                                        color: purple,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 3),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: LinearProgressIndicator(
+                                    value: (percentual / 100).clamp(0.0, 1.0),
+                                    minHeight: 9,
+                                    backgroundColor: escuro
+                                        ? Colors.white12
+                                        : Colors.white,
+                                    valueColor:
+                                        const AlwaysStoppedAnimation<Color>(
+                                          purple,
+                                        ),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  _tr(
+                                    '$dominados de $total cards dominados',
+                                    '$dominados of $total cards mastered',
+                                    '$dominados de $total tarjetas dominadas',
+                                  ),
+                                  style: TextStyle(
+                                    color: secundario,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  GestureDetector(
-                    onTap: () => _openRoute('/progress'),
-                    child: _buildNavItem(Icons.bar_chart_outlined, 'Progresso'),
+                ),
+
+                // NAVEGAÇÃO INFERIOR
+                Container(
+                  decoration: BoxDecoration(
+                    color: superficie,
+                    border: Border(top: BorderSide(color: borda)),
                   ),
-                  GestureDetector(
-                    onTap: () => _openRoute('/profile'),
-                    child: _buildNavItem(Icons.person_outline, 'Perfil'),
+                  child: Row(
+                    children: [
+                      _itemNav(
+                        Icons.home_outlined,
+                        _tr('Início', 'Home', 'Inicio'),
+                        '/home',
+                        secundario,
+                        ativo: true,
+                      ),
+                      _itemNav(
+                        Icons.style_outlined,
+                        _tr('Decks', 'Decks', 'Mazos'),
+                        '/decks',
+                        secundario,
+                      ),
+                      Expanded(
+                        child: Center(
+                          child: InkWell(
+                            onTap: () => _abrir('/create-flashcards'),
+                            customBorder: const CircleBorder(),
+                            child: Container(
+                              width: 59,
+                              height: 59,
+                              decoration: const BoxDecoration(
+                                color: purple,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.add,
+                                size: 30,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      _itemNav(
+                        Icons.bar_chart_outlined,
+                        _tr('Progresso', 'Progress', 'Progreso'),
+                        '/progress',
+                        secundario,
+                      ),
+                      _itemNav(
+                        Icons.person_outline,
+                        _tr('Perfil', 'Profile', 'Perfil'),
+                        '/profile',
+                        secundario,
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInteractiveDeckCard({
-    required String title,
-    required String cardsCount,
-    required Color deckColor,
-    VoidCallback? onTap,
-  }) {
-    final bool isSelected = selectedDeckTitle == title;
-
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          selectedDeckTitle = isSelected ? null : title;
-        });
-        onTap?.call();
+          ),
+        );
       },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: deckColor.withOpacity(0.12),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isSelected ? deckColor : deckColor.withOpacity(0.35),
-            width: 1.5,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: deckColor.withOpacity(isSelected ? 0.15 : 0.05),
-              blurRadius: isSelected ? 12 : 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: deckColor,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(Icons.style, color: Colors.white, size: 24),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: deckColor,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    cardsCount,
-                    style: const TextStyle(fontSize: 13, color: Colors.black54),
-                  ),
-                ],
-              ),
-            ),
-            Icon(Icons.chevron_right, color: deckColor, size: 22),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNavItem(IconData icon, String label, {bool active = false}) {
-    final Color color = active ? primaryPurple : Colors.grey;
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, color: color, size: 24),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: TextStyle(
-            color: color,
-            fontSize: 11,
-            fontWeight: active ? FontWeight.bold : FontWeight.normal,
-          ),
-        ),
-      ],
     );
   }
 }

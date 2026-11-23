@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'banco_de_dados/sql_helper.dart';
+import 'language_controller.dart';
 
 class EditFlashcardScreen extends StatefulWidget {
   final int flashcardId;
@@ -12,17 +13,25 @@ class EditFlashcardScreen extends StatefulWidget {
 }
 
 class _EditFlashcardScreenState extends State<EditFlashcardScreen> {
-  static const Color primaryPurple = Color(0xFF6C4DFF);
-  static const Color backgroundColor = Color(0xFFF8F9FE);
-  static const Color labelColor = Color(0xFF667085);
+  static const primaryPurple = Color(0xFF6C4DFF);
 
-  final TextEditingController _questionController = TextEditingController();
-
-  final TextEditingController _answerController = TextEditingController();
+  final _questionController = TextEditingController();
+  final _answerController = TextEditingController();
 
   bool _isLoading = true;
   bool _isSaving = false;
   String? _errorMessage;
+
+  String _tr(String pt, String en, String es) {
+    switch (LanguageController.locale.value.languageCode) {
+      case 'en':
+        return en;
+      case 'es':
+        return es;
+      default:
+        return pt;
+    }
+  }
 
   @override
   void initState() {
@@ -30,69 +39,72 @@ class _EditFlashcardScreenState extends State<EditFlashcardScreen> {
     _loadFlashcard();
   }
 
-  // CARREGAR FLASHCARD DO SQLITE
   Future<void> _loadFlashcard() async {
     try {
       final result = await SQLHelper.pegaUmFlashcard(widget.flashcardId);
-
       if (!mounted) return;
 
       if (result.isEmpty) {
         setState(() {
           _isLoading = false;
-          _errorMessage = 'Flashcard não encontrado.';
+          _errorMessage = _tr(
+            'Flashcard não encontrado.',
+            'Flashcard not found.',
+            'No se encontró la tarjeta.',
+          );
         });
         return;
       }
 
       final flashcard = result.first;
-
       _questionController.text = flashcard['question']?.toString() ?? '';
-
       _answerController.text = flashcard['answer']?.toString() ?? '';
-
       setState(() {
         _isLoading = false;
         _errorMessage = null;
       });
     } catch (e) {
+      debugPrint('Erro ao carregar flashcard: $e');
       if (!mounted) return;
-
       setState(() {
         _isLoading = false;
-        _errorMessage = 'Erro ao carregar flashcard: $e';
+        _errorMessage = _tr(
+          'Erro ao carregar flashcard.',
+          'Could not load flashcard.',
+          'No se pudo cargar la tarjeta.',
+        );
       });
     }
   }
 
   void _showMessage(String message) {
     if (!mounted) return;
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
     );
   }
 
-  // SALVAR ALTERAÇÕES
   Future<void> _saveChanges() async {
+    if (_isSaving || _isLoading) return;
+
     final question = _questionController.text.trim();
     final answer = _answerController.text.trim();
 
     if (question.isEmpty) {
-      _showMessage('Digite a pergunta.');
+      _showMessage(
+        _tr('Digite a pergunta.', 'Enter a question.', 'Escribe la pregunta.'),
+      );
       return;
     }
-
     if (answer.isEmpty) {
-      _showMessage('Digite a resposta.');
+      _showMessage(
+        _tr('Digite a resposta.', 'Enter an answer.', 'Escribe la respuesta.'),
+      );
       return;
     }
 
-    if (_isSaving) return;
-
-    setState(() {
-      _isSaving = true;
-    });
+    FocusScope.of(context).unfocus();
+    setState(() => _isSaving = true);
 
     try {
       final updated = await SQLHelper.atualizaFlashcard(
@@ -100,97 +112,98 @@ class _EditFlashcardScreenState extends State<EditFlashcardScreen> {
         question,
         answer,
       );
-
       if (!mounted) return;
-
       if (updated == 0) {
-        _showMessage('Flashcard não encontrado.');
+        _showMessage(
+          _tr(
+            'Flashcard não encontrado.',
+            'Flashcard not found.',
+            'No se encontró la tarjeta.',
+          ),
+        );
         return;
       }
-
       Navigator.pop(context, true);
     } catch (e) {
-      _showMessage('Erro ao salvar alterações: $e');
+      debugPrint('Erro ao salvar flashcard: $e');
+      _showMessage(
+        _tr(
+          'Erro ao salvar alterações.',
+          'Could not save changes.',
+          'No se pudieron guardar los cambios.',
+        ),
+      );
     } finally {
-      if (mounted) {
-        setState(() {
-          _isSaving = false;
-        });
-      }
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
-  // EXCLUIR FLASHCARD
   Future<void> _deleteFlashcard() async {
-    if (_isSaving) return;
+    if (_isSaving || _isLoading) return;
 
-    final bool? confirmed = await showDialog<bool>(
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          _tr('Excluir flashcard?', 'Delete flashcard?', '¿Eliminar tarjeta?'),
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          _tr(
+            'Tem certeza que deseja excluir este flashcard? Essa ação não pode ser desfeita.',
+            'Are you sure you want to delete this flashcard? This action cannot be undone.',
+            '¿Seguro que quieres eliminar esta tarjeta? Esta acción no se puede deshacer.',
           ),
-          title: const Text(
-            'Excluir flashcard?',
-            style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(_tr('Cancelar', 'Cancel', 'Cancelar')),
           ),
-          content: const Text(
-            'Tem certeza que deseja excluir este flashcard? '
-            'Essa ação não pode ser desfeita.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext, false);
-              },
-              child: const Text('Cancelar'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext, true);
-              },
-              child: const Text(
-                'Excluir',
-                style: TextStyle(
-                  color: Colors.red,
-                  fontWeight: FontWeight.bold,
-                ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(
+              _tr('Excluir', 'Delete', 'Eliminar'),
+              style: const TextStyle(
+                color: Colors.red,
+                fontWeight: FontWeight.bold,
               ),
             ),
-          ],
-        );
-      },
+          ),
+        ],
+      ),
     );
 
     if (!mounted || confirmed != true) return;
-
-    setState(() {
-      _isSaving = true;
-    });
+    setState(() => _isSaving = true);
 
     try {
       await SQLHelper.apagaFlashcard(widget.flashcardId);
-
       final remaining = await SQLHelper.pegaUmFlashcard(widget.flashcardId);
-
       if (!mounted) return;
-
       if (remaining.isNotEmpty) {
-        _showMessage('Não foi possível excluir o flashcard.');
+        _showMessage(
+          _tr(
+            'Não foi possível excluir o flashcard.',
+            'Could not delete the flashcard.',
+            'No se pudo eliminar la tarjeta.',
+          ),
+        );
         return;
       }
-
       Navigator.pop(context, true);
     } catch (e) {
-      _showMessage('Erro ao excluir flashcard: $e');
+      debugPrint('Erro ao excluir flashcard: $e');
+      _showMessage(
+        _tr(
+          'Erro ao excluir flashcard.',
+          'Error deleting flashcard.',
+          'Error al eliminar la tarjeta.',
+        ),
+      );
     } finally {
-      if (mounted) {
-        setState(() {
-          _isSaving = false;
-        });
-      }
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
@@ -203,161 +216,160 @@ class _EditFlashcardScreenState extends State<EditFlashcardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: backgroundColor,
-
-      appBar: AppBar(
-        backgroundColor: backgroundColor,
-        elevation: 0,
-        surfaceTintColor: Colors.transparent,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text(
-          'Editar flashcard',
-          style: TextStyle(
-            color: Color(0xFF101828),
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
+    return ValueListenableBuilder<Locale>(
+      valueListenable: LanguageController.locale,
+      builder: (context, locale, child) {
+        final theme = Theme.of(context);
+        final colors = theme.colorScheme;
+        return Scaffold(
+          backgroundColor: theme.scaffoldBackgroundColor,
+          appBar: AppBar(
+            backgroundColor: theme.scaffoldBackgroundColor,
+            surfaceTintColor: Colors.transparent,
+            elevation: 0,
+            foregroundColor: colors.onSurface,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: _isSaving ? null : () => Navigator.pop(context),
+            ),
+            title: Text(
+              _tr('Editar flashcard', 'Edit flashcard', 'Editar tarjeta'),
+              style: TextStyle(
+                color: colors.onSurface,
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
-        ),
-      ),
-
-      body: SafeArea(
-        child: _isLoading
-            ? const Center(
-                child: CircularProgressIndicator(color: primaryPurple),
-              )
-            : _errorMessage != null
-            ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(_errorMessage!, textAlign: TextAlign.center),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                        },
-                        child: const Text('Voltar'),
-                      ),
-                    ],
-                  ),
-                ),
-              )
-            : Padding(
-                padding: const EdgeInsets.fromLTRB(34, 40, 34, 20),
-                child: Column(
-                  children: [
-                    Expanded(
-                      child: ListView(
+          body: SafeArea(
+            child: _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(color: primaryPurple),
+                  )
+                : _errorMessage != null
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          // CAMPO PERGUNTA
-                          _buildTextCard(
-                            title: 'Pergunta',
-                            controller: _questionController,
-                            height: 152,
-                          ),
-
-                          const SizedBox(height: 56),
-
-                          // CAMPO RESPOSTA
-                          _buildTextCard(
-                            title: 'Resposta',
-                            controller: _answerController,
-                            height: 224,
+                          Text(_errorMessage!, textAlign: TextAlign.center),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: Text(_tr('Voltar', 'Back', 'Volver')),
                           ),
                         ],
                       ),
                     ),
-
-                    // BOTÕES INFERIORES
-                    Row(
+                  )
+                : Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+                    child: Column(
                       children: [
                         Expanded(
-                          flex: 1,
-                          child: OutlinedButton(
-                            onPressed: _isSaving ? null : _deleteFlashcard,
-                            style: OutlinedButton.styleFrom(
-                              minimumSize: const Size(0, 54),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
+                          child: ListView(
+                            children: [
+                              _buildTextCard(
+                                title: _tr('Pergunta', 'Question', 'Pregunta'),
+                                controller: _questionController,
+                                height: 152,
                               ),
-                              side: const BorderSide(color: Colors.red),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                              const SizedBox(height: 30),
+                              _buildTextCard(
+                                title: _tr('Resposta', 'Answer', 'Respuesta'),
+                                controller: _answerController,
+                                height: 224,
                               ),
-                            ),
-                            child: const Text(
-                              'Excluir',
-                              style: TextStyle(
-                                color: Colors.red,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15,
-                              ),
-                            ),
+                            ],
                           ),
                         ),
-
-                        const SizedBox(width: 12),
-
-                        Expanded(
-                          flex: 2,
-                          child: ElevatedButton(
-                            onPressed: _isSaving ? null : _saveChanges,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: primaryPurple,
-                              foregroundColor: Colors.white,
-                              minimumSize: const Size(0, 54),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                              ),
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child: Text(
-                              _isSaving ? 'Aguarde...' : 'Salvar alterações',
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15,
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: _isSaving ? null : _deleteFlashcard,
+                                style: OutlinedButton.styleFrom(
+                                  minimumSize: const Size(0, 54),
+                                  side: const BorderSide(color: Colors.red),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                child: Text(
+                                  _tr('Excluir', 'Delete', 'Eliminar'),
+                                  style: const TextStyle(
+                                    color: Colors.red,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              flex: 2,
+                              child: ElevatedButton(
+                                onPressed: _isSaving ? null : _saveChanges,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: primaryPurple,
+                                  foregroundColor: Colors.white,
+                                  minimumSize: const Size(0, 54),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                child: _isSaving
+                                    ? const SizedBox(
+                                        height: 22,
+                                        width: 22,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.5,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : Text(
+                                        _tr(
+                                          'Salvar alterações',
+                                          'Save changes',
+                                          'Guardar cambios',
+                                        ),
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 15,
+                                        ),
+                                      ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-
-                    const SizedBox(height: 10),
-                  ],
-                ),
-              ),
-      ),
+                  ),
+          ),
+        );
+      },
     );
   }
 
-  // CARD DE PERGUNTA E RESPOSTA
   Widget _buildTextCard({
     required String title,
     required TextEditingController controller,
     required double height,
   }) {
+    final colors = Theme.of(context).colorScheme;
     return Container(
       height: height,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: colors.surface,
         borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: colors.outlineVariant),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.20),
-            blurRadius: 3,
-            offset: const Offset(0, 4),
+            color: colors.shadow.withValues(alpha: 0.08),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -365,35 +377,34 @@ class _EditFlashcardScreenState extends State<EditFlashcardScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(38, 24, 20, 12),
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
             child: Text(
               title,
-              style: const TextStyle(
-                color: labelColor,
+              style: TextStyle(
+                color: colors.onSurfaceVariant,
                 fontWeight: FontWeight.bold,
                 fontSize: 17,
               ),
             ),
           ),
-
-          const Divider(height: 1, thickness: 0.8, color: labelColor),
-
+          Divider(height: 1, color: colors.outlineVariant),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(38, 16, 20, 12),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
               child: TextField(
                 controller: controller,
+                enabled: !_isSaving,
                 expands: true,
                 maxLines: null,
                 minLines: null,
                 keyboardType: TextInputType.multiline,
                 textAlignVertical: TextAlignVertical.top,
+                style: TextStyle(fontSize: 16, color: colors.onSurface),
                 decoration: const InputDecoration(
                   border: InputBorder.none,
                   isDense: true,
                   contentPadding: EdgeInsets.zero,
                 ),
-                style: const TextStyle(fontSize: 16, color: Color(0xFF101828)),
               ),
             ),
           ),

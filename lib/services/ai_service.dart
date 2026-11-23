@@ -9,7 +9,7 @@ import 'package:http/http.dart' as http;
 class AiService {
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://127.0.0.1:3000',
+    defaultValue: 'http://192.168.0.69:3000',
   );
 
   static Future<Map<String, dynamic>> gerarFlashcards({
@@ -22,28 +22,34 @@ class AiService {
     final client = http.Client();
 
     try {
+      print('[StudyCards] Backend configurado: $baseUrl');
+      print('[StudyCards] Endpoint: $uri');
+      print('[StudyCards] Iniciando geração de flashcards...');
+
       final request = http.MultipartRequest('POST', uri)
         ..fields['text'] = texto ?? ''
         ..fields['subject'] = materia ?? ''
         ..fields['count'] = '8';
 
       if (arquivo != null) {
+        print('[StudyCards] Arquivo: ${arquivo.path}');
+
         request.files.add(
           await http.MultipartFile.fromPath('file', arquivo.path),
         );
       }
 
-      print('[StudyCards] Enviando material para a IA...');
+      print('[StudyCards] Enviando requisição ao backend...');
 
-      final response = await (() async {
-        final streamed = await client.send(request);
-        return http.Response.fromStream(streamed);
-      })().timeout(const Duration(minutes: 10));
+      final streamed = await client
+          .send(request)
+          .timeout(const Duration(minutes: 10));
 
-      print('[StudyCards] Resposta recebida: ${response.statusCode}');
+      final response = await http.Response.fromStream(streamed);
+
+      print('[StudyCards] Status HTTP: ${response.statusCode}');
 
       final resultado = _decode(response);
-
       final cards = resultado['cards'];
 
       if (cards is! List || cards.isEmpty) {
@@ -53,16 +59,29 @@ class AiService {
       print('[StudyCards] ${cards.length} flashcards recebidos!');
 
       return resultado;
-    } on TimeoutException {
+    } on TimeoutException catch (erro) {
+      print('[StudyCards] TIMEOUT: $erro');
+
       throw Exception(
         'A geração demorou mais de 10 minutos. '
         'Tente novamente com um arquivo menor.',
       );
-    } on SocketException {
+    } on SocketException catch (erro) {
+      print('[StudyCards] ERRO DE REDE: $erro');
+      print('[StudyCards] Endereço utilizado: $uri');
+
       throw Exception(
         'Não foi possível conectar ao backend. '
-        'Verifique se o servidor está ligado.',
+        'Detalhes: $erro',
       );
+    } on http.ClientException catch (erro) {
+      print('[StudyCards] ERRO HTTP: $erro');
+
+      throw Exception('Falha na comunicação com o backend: $erro');
+    } catch (erro, stackTrace) {
+      print('[StudyCards] ERRO: $erro');
+      print('[StudyCards] STACK TRACE: $stackTrace');
+      rethrow;
     } finally {
       client.close();
     }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'banco_de_dados/auth_helper.dart';
+import 'language_controller.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -10,325 +11,453 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  // Abre o login e atualiza o perfil quando a pessoa voltar logada.
-  Future<void> _fazerLogin() async {
-    await Navigator.pushNamed(context, '/login');
-    if (mounted) setState(() {});
+  static const Color purple = Color(0xFF7138F5);
+
+  bool _saindo = false;
+
+  String _tr(String pt, String en, String es) {
+    switch (LanguageController.locale.value.languageCode) {
+      case 'en':
+        return en;
+      case 'es':
+        return es;
+      default:
+        return pt;
+    }
+  }
+
+  Future<void> _abrir(String rota) async {
+    if (_saindo) return;
+
+    await Navigator.pushNamed(context, rota);
+
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _sair() async {
+    if (_saindo) return;
+
+    setState(() {
+      _saindo = true;
+    });
+
+    try {
+      await AuthHelper.sair();
+
+      if (!mounted) return;
+
+      Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
+    } catch (e) {
+      debugPrint('Erro ao sair da conta: $e');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _tr(
+              'Não foi possível sair da conta. Tente novamente.',
+              'Could not log out. Please try again.',
+              'No se pudo cerrar sesión. Inténtalo de nuevo.',
+            ),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _saindo = false;
+        });
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final logado = Sessao.logado;
-    const primaryPurple = Color(0xFF6C4DFF);
+    return ValueListenableBuilder<Locale>(
+      valueListenable: LanguageController.locale,
+      builder: (context, locale, child) {
+        final theme = Theme.of(context);
+        final dark = theme.brightness == Brightness.dark;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FE),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.all(24.0),
-                children: [
-                  const SizedBox(height: 10),
+        final logged = Sessao.logado;
 
-                  // Cabeçalho (usuário logado ou visitante)
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 36,
-                        backgroundColor: primaryPurple,
-                        child: logado
-                            ? Text(
-                                Sessao.inicial,
-                                style: const TextStyle(
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(
-                                Icons.person_outline,
-                                size: 36,
-                                color: Colors.white,
-                              ),
+        final bg = dark ? const Color(0xFF141320) : const Color(0xFFF8F7FF);
+
+        final surface = dark ? const Color(0xFF242333) : Colors.white;
+
+        final text = dark ? Colors.white : const Color(0xFF191B31);
+
+        final muted = dark ? Colors.white60 : const Color(0xFF73798B);
+
+        final border = dark ? Colors.white12 : const Color(0xFFE7E5F2);
+
+        Widget menu(IconData icon, String title, String route) {
+          return ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            leading: Icon(icon, color: text, size: 21),
+            title: Text(title, style: TextStyle(color: text, fontSize: 16)),
+            trailing: Icon(Icons.chevron_right, color: muted),
+            onTap: _saindo ? null : () => _abrir(route),
+          );
+        }
+
+        Widget nav(
+          IconData icon,
+          String label,
+          String route, {
+          bool selected = false,
+        }) {
+          return Expanded(
+            child: InkWell(
+              onTap: selected || _saindo
+                  ? null
+                  : () {
+                      if (route == '/home') {
+                        Navigator.pushNamedAndRemoveUntil(
+                          context,
+                          '/home',
+                          (r) => false,
+                        );
+                      } else {
+                        _abrir(route);
+                      }
+                    },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 7),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(icon, color: selected ? purple : muted, size: 23),
+                    const SizedBox(height: 3),
+                    Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: selected ? purple : muted,
+                        fontWeight: selected
+                            ? FontWeight.bold
+                            : FontWeight.normal,
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              logado ? Sessao.nome : 'Visitante',
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black87,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
+        return Scaffold(
+          backgroundColor: bg,
+          body: SafeArea(
+            child: Column(
+              children: [
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(21, 0, 21, 24),
+                    children: [
+                      const SizedBox(height: 95),
+
+                      // LOGO
+                      Center(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(22),
+                          child: Image.asset(
+                            'assets/images/studycards_logo.png',
+                            width: 92,
+                            height: 92,
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // NOME DO USUÁRIO
+                      Text(
+                        logged
+                            ? Sessao.nome
+                            : _tr(
+                                'Entre no StudyCards',
+                                'Log in to StudyCards',
+                                'Inicia sesión en StudyCards',
+                              ),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: text,
+                          fontSize: 24,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+
+                      const SizedBox(height: 6),
+
+                      // OCUPAÇÃO OU DESCRIÇÃO
+                      Text(
+                        logged
+                            ? Sessao.ocupacao
+                            : _tr(
+                                'Crie uma conta neste aparelho para\nidentificar seus estudos.',
+                                'Create an account on this device to\nkeep track of your studies.',
+                                'Crea una cuenta en este dispositivo para\nidentificar tus estudios.',
+                              ),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: muted,
+                          fontSize: 16,
+                          height: 1.4,
+                        ),
+                      ),
+
+                      const SizedBox(height: 34),
+
+                      // USUÁRIO NÃO LOGADO
+                      if (!logged) ...[
+                        SizedBox(
+                          height: 56,
+                          child: ElevatedButton(
+                            onPressed: _saindo ? null : () => _abrir('/login'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: purple,
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
                               ),
                             ),
-                            const SizedBox(height: 2),
-                            Text(
-                              logado
-                                  ? Sessao.ocupacao
-                                  : 'Entre para salvar seu progresso',
-                              style: const TextStyle(
-                                fontSize: 15,
-                                color: Colors.grey,
+                            child: Text(
+                              _tr(
+                                'Entrar na conta',
+                                'Log in to account',
+                                'Iniciar sesión',
                               ),
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 11),
+
+                        SizedBox(
+                          height: 56,
+                          child: OutlinedButton(
+                            onPressed: _saindo
+                                ? null
+                                : () => _abrir('/register'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: dark
+                                  ? const Color(0xFFB59AFF)
+                                  : purple,
+                              side: const BorderSide(color: purple, width: 2),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            child: Text(
+                              _tr(
+                                'Criar minha conta',
+                                'Create my account',
+                                'Crear mi cuenta',
+                              ),
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 20),
+                      ],
+
+                      // CONFIGURAÇÕES E SOBRE
+                      Container(
+                        decoration: BoxDecoration(
+                          color: surface,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: border),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(
+                                alpha: dark ? 0 : 0.05,
+                              ),
+                              blurRadius: 10,
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          children: [
+                            menu(
+                              Icons.settings_outlined,
+                              _tr('Configurações', 'Settings', 'Configuración'),
+                              '/settings',
+                            ),
+                            Divider(height: 1, color: border),
+                            menu(
+                              Icons.info_outline,
+                              _tr(
+                                'Sobre o StudyCards',
+                                'About StudyCards',
+                                'Acerca de StudyCards',
+                              ),
+                              '/about',
                             ),
                           ],
                         ),
                       ),
+
+                      // OPÇÕES DE USUÁRIO LOGADO
+                      if (logged) ...[
+                        const SizedBox(height: 16),
+
+                        Container(
+                          decoration: BoxDecoration(
+                            color: surface,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: border),
+                          ),
+                          child: Column(
+                            children: [
+                              menu(
+                                Icons.notifications_none,
+                                _tr(
+                                  'Notificações',
+                                  'Notifications',
+                                  'Notificaciones',
+                                ),
+                                '/notifications-settings',
+                              ),
+                              Divider(height: 1, color: border),
+                              menu(
+                                Icons.style_outlined,
+                                _tr('Meus decks', 'My decks', 'Mis mazos'),
+                                '/decks',
+                              ),
+                              Divider(height: 1, color: border),
+                              menu(
+                                Icons.bar_chart_outlined,
+                                _tr(
+                                  'Meu progresso',
+                                  'My progress',
+                                  'Mi progreso',
+                                ),
+                                '/progress',
+                              ),
+                              Divider(height: 1, color: border),
+                              menu(
+                                Icons.help_outline,
+                                _tr(
+                                  'Ajuda e suporte',
+                                  'Help and support',
+                                  'Ayuda y soporte',
+                                ),
+                                '/help-support',
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 20),
+
+                        // SAIR DA CONTA
+                        OutlinedButton(
+                          onPressed: _saindo ? null : _sair,
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(52),
+                            side: const BorderSide(color: Colors.redAccent),
+                          ),
+                          child: _saindo
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.redAccent,
+                                  ),
+                                )
+                              : Text(
+                                  _tr(
+                                    'Sair da conta',
+                                    'Log out',
+                                    'Cerrar sesión',
+                                  ),
+                                  style: const TextStyle(
+                                    color: Colors.redAccent,
+                                  ),
+                                ),
+                        ),
+                      ],
                     ],
                   ),
-                  const SizedBox(height: 28),
+                ),
 
-                  // Visitante: botão de login em destaque
-                  if (!logado) ...[
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: primaryPurple,
-                        minimumSize: const Size.fromHeight(54),
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                      onPressed: _fazerLogin,
-                      child: const Text(
-                        'Fazer login',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                  ],
-
-                  // Opções liberadas para todos
-                  _buildMenuCard(
-                    icon: Icons.settings_outlined,
-                    title: 'Configurações',
-                    onTap: () => Navigator.pushNamed(context, '/settings'),
+                // NAVEGAÇÃO INFERIOR
+                Container(
+                  decoration: BoxDecoration(
+                    color: surface,
+                    border: Border(top: BorderSide(color: border)),
                   ),
-                  const SizedBox(height: 12),
-                  _buildMenuCard(
-                    icon: Icons.help_outline_rounded,
-                    title: 'Ajuda e suporte',
-                    onTap: () => Navigator.pushNamed(context, '/help-support'),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildMenuCard(
-                    icon: Icons.info_outline_rounded,
-                    title: 'Sobre o StudyCards',
-                    onTap: () => Navigator.pushNamed(context, '/about'),
-                  ),
-
-                  // Opções só para quem está logado
-                  if (logado) ...[
-                    const SizedBox(height: 12),
-                    _buildMenuCard(
-                      icon: Icons.notifications_none_rounded,
-                      title: 'Notificações',
-                      onTap: () => Navigator.pushNamed(
-                        context,
-                        '/notifications-settings',
+                  child: Row(
+                    children: [
+                      nav(
+                        Icons.home_outlined,
+                        _tr('Início', 'Home', 'Inicio'),
+                        '/home',
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    _buildMenuCard(
-                      icon: Icons.menu_book_outlined,
-                      title: 'Meus decks',
-                      onTap: () => Navigator.pushNamed(context, '/decks'),
-                    ),
-                    const SizedBox(height: 12),
-                    _buildMenuCard(
-                      icon: Icons.bar_chart_rounded,
-                      title: 'Meu progresso',
-                      onTap: () => Navigator.pushNamed(context, '/progress'),
-                    ),
-                    const SizedBox(height: 24),
-
-                    // Botão Sair da conta
-                    OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: const Size.fromHeight(54),
-                        side: const BorderSide(
-                          color: primaryPurple,
-                          width: 1.2,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
+                      nav(
+                        Icons.style_outlined,
+                        _tr('Decks', 'Decks', 'Mazos'),
+                        '/decks',
                       ),
-                      onPressed: () async {
-                        await AuthHelper.sair();
-                        if (!context.mounted) return;
-                        Navigator.pushNamedAndRemoveUntil(
-                          context,
-                          '/home',
-                          (route) => false,
-                        );
-                      },
-                      child: const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            'Sair da conta',
-                            style: TextStyle(
-                              color: Color(0xFFE53935),
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
+                      Expanded(
+                        child: Center(
+                          child: InkWell(
+                            onTap: _saindo
+                                ? null
+                                : () => _abrir('/create-flashcards'),
+                            customBorder: const CircleBorder(),
+                            child: Container(
+                              width: 59,
+                              height: 59,
+                              decoration: const BoxDecoration(
+                                color: purple,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.add,
+                                color: Colors.white,
+                                size: 30,
+                              ),
                             ),
                           ),
-                          SizedBox(width: 8),
-                          Icon(
-                            Icons.chevron_right,
-                            color: Color(0xFFE53935),
-                            size: 20,
-                          ),
-                        ],
+                        ),
                       ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-
-            // Navigation Bar Inferior Fixa
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black12,
-                    blurRadius: 10,
-                    offset: Offset(0, -2),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  GestureDetector(
-                    onTap: () =>
-                        Navigator.pushReplacementNamed(context, '/home'),
-                    child: _buildNavItem(Icons.home_outlined, 'Início'),
-                  ),
-                  GestureDetector(
-                    onTap: () => Navigator.pushNamed(context, '/decks'),
-                    child: _buildNavItem(Icons.style_outlined, 'Decks'),
-                  ),
-
-                  // Botão Central (+)
-                  GestureDetector(
-                    onTap: () =>
-                        Navigator.pushNamed(context, '/create-flashcards'),
-                    child: Container(
-                      width: 54,
-                      height: 54,
-                      decoration: const BoxDecoration(
-                        color: primaryPurple,
-                        shape: BoxShape.circle,
+                      nav(
+                        Icons.bar_chart_outlined,
+                        _tr('Progresso', 'Progress', 'Progreso'),
+                        '/progress',
                       ),
-                      child: const Icon(
-                        Icons.add,
-                        color: Colors.white,
-                        size: 28,
+                      nav(
+                        Icons.person_outline,
+                        _tr('Perfil', 'Profile', 'Perfil'),
+                        '/profile',
+                        selected: true,
                       ),
-                    ),
+                    ],
                   ),
-
-                  GestureDetector(
-                    onTap: () => Navigator.pushNamed(context, '/progress'),
-                    child: _buildNavItem(Icons.bar_chart_outlined, 'Progresso'),
-                  ),
-
-                  // Item Perfil Ativo
-                  _buildNavItem(Icons.person_outline, 'Perfil', active: true),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // Widget para os cards de menu individuais com sombra leve
-  Widget _buildMenuCard({
-    required IconData icon,
-    required String title,
-    required VoidCallback onTap,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            child: Row(
-              children: [
-                Icon(icon, size: 22, color: Colors.black87),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black87,
-                    ),
-                  ),
-                ),
-                const Icon(
-                  Icons.chevron_right,
-                  color: Colors.black45,
-                  size: 20,
                 ),
               ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNavItem(IconData icon, String label, {bool active = false}) {
-    const primaryPurple = Color(0xFF6C4DFF);
-    final color = active ? primaryPurple : Colors.grey;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, color: color, size: 24),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: TextStyle(
-            color: color,
-            fontSize: 11,
-            fontWeight: active ? FontWeight.bold : FontWeight.normal,
-          ),
-        ),
-      ],
+        );
+      },
     );
   }
 }
