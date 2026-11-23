@@ -18,7 +18,7 @@ const TIMEOUT_MS = 180000;
 const MAX_ATTEMPTS = 3;
 
 const FALLBACK_MODEL = String(
-  process.env.GEMINI_FALLBACK_MODEL || 'gemini-2.5-flash'
+  process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.8-flash'
 ).trim().replace(/^models\//, '');
 
 const FALLBACK_ATTEMPTS = 2;
