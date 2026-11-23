@@ -8,11 +8,21 @@ const rateLimit = require('express-rate-limit');
 const path = require('node:path');
 const pdfParse = require('pdf-parse');
 
+const {
+  initializeApp,
+  cert,
+  applicationDefault,
+  getApps,
+} = require('firebase-admin/app');
+
+const { getAuth } = require('firebase-admin/auth');
+
 const app = express();
 
 const PORT = Number(process.env.PORT || 3000);
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 12);
 const API_KEY = String(process.env.GEMINI_API_KEY || '').trim();
+
 const MODEL = String(
   process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite'
 ).trim().replace(/^models\//, '');
@@ -20,8 +30,131 @@ const MODEL = String(
 const TIMEOUT_MS = 180000;
 const MAX_ATTEMPTS = 2;
 
+// ========================================
+// FIREBASE ADMIN
+// ========================================
+
+// As credenciais ficam exclusivamente no servidor.
+// Nunca coloque a chave privada no Flutter ou no GitHub.
+
+function initializeFirebaseAdmin() {
+  if (getApps().length) return;
+
+  const serviceAccountJson = String(
+    process.env.FIREBASE_SERVICE_ACCOUNT_JSON || ''
+  ).trim();
+
+  const projectId = String(
+    process.env.FIREBASE_PROJECT_ID || ''
+  ).trim();
+
+  if (serviceAccountJson) {
+    let serviceAccount;
+
+    try {
+      serviceAccount = JSON.parse(serviceAccountJson);
+    } catch (_) {
+      throw new Error(
+        'FIREBASE_SERVICE_ACCOUNT_JSON não contém JSON válido.'
+      );
+    }
+
+    if (
+      !serviceAccount.project_id ||
+      !serviceAccount.private_key ||
+      !serviceAccount.client_email
+    ) {
+      throw new Error(
+        'FIREBASE_SERVICE_ACCOUNT_JSON está incompleto.'
+      );
+    }
+
+    initializeApp({
+      credential: cert(serviceAccount),
+      projectId: serviceAccount.project_id,
+    });
+  } else {
+    initializeApp({
+      credential: applicationDefault(),
+      ...(projectId ? { projectId } : {}),
+    });
+  }
+}
+
+initializeFirebaseAdmin();
+
+// ========================================
+// AUTENTICAÇÃO DO USUÁRIO
+// ========================================
+
+async function requireFirebaseAuth(req, res, next) {
+  const authorization = req.get('authorization') || '';
+
+  const match = /^Bearer\s+([^\s]+)$/i.exec(authorization);
+
+  if (!match) {
+    return res.status(401).json({
+      error: 'Faça login para utilizar a IA.',
+    });
+  }
+
+  try {
+    const decoded = await getAuth().verifyIdToken(
+      match[1],
+      true
+    );
+
+    req.firebaseUser = {
+      uid: decoded.uid,
+    };
+
+    return next();
+  } catch (error) {
+    console.warn(
+      '[Auth] Token Firebase inválido:',
+      error.code || error.name
+    );
+
+    return res.status(401).json({
+      error: 'Sessão inválida ou expirada. Faça login novamente.',
+    });
+  }
+}
+
+// ========================================
+// LIMITE DE GERAÇÕES POR USUÁRIO
+// ========================================
+
+// Limite inicial de 5 solicitações por hora.
+// O contador fica na memória e reinicia quando
+// o servidor reinicia. Para uma cota persistente,
+// será necessário usar um banco de dados ou Redis.
+
+const aiRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+
+  keyGenerator: (req) => req.firebaseUser.uid,
+
+  handler: (_req, res) => {
+    return res.status(429).json({
+      error:
+        'Limite de 5 gerações por hora atingido. Tente mais tarde.',
+    });
+  },
+});
+
+// ========================================
+// CONFIGURAÇÕES DO EXPRESS
+// ========================================
+
 app.use(cors());
-app.use(express.json({ limit: '2mb' }));
+
+app.use(express.json({
+  limit: '2mb',
+}));
 
 app.use('/api/', rateLimit({
   windowMs: 60000,
@@ -44,19 +177,23 @@ const MIME_TYPES = {
 
 const upload = multer({
   storage: multer.memoryStorage(),
+
   limits: {
     fileSize: MAX_UPLOAD_MB * 1024 * 1024,
     files: 1,
   },
+
   fileFilter: (_req, file, callback) => {
     const extension = path.extname(
       file.originalname || ''
     ).toLowerCase();
 
     if (!MIME_TYPES[extension]) {
-      return callback(new Error(
-        'Formato inválido. Envie PDF, JPG, PNG ou WEBP.'
-      ));
+      return callback(
+        new Error(
+          'Formato inválido. Envie PDF, JPG, PNG ou WEBP.'
+        )
+      );
     }
 
     callback(null, true);
@@ -69,27 +206,57 @@ const upload = multer({
 
 const FLASHCARDS_SCHEMA = {
   type: 'object',
+
   properties: {
-    title: { type: 'string' },
-    subject: { type: 'string' },
-    summary: { type: 'string' },
+    title: {
+      type: 'string',
+    },
+
+    subject: {
+      type: 'string',
+    },
+
+    summary: {
+      type: 'string',
+    },
+
     cards: {
       type: 'array',
+
       items: {
         type: 'object',
+
         properties: {
-          question: { type: 'string' },
-          answer: { type: 'string' },
-          topic: { type: 'string' },
+          question: {
+            type: 'string',
+          },
+
+          answer: {
+            type: 'string',
+          },
+
+          topic: {
+            type: 'string',
+          },
         },
-        required: ['question', 'answer', 'topic'],
+
+        required: [
+          'question',
+          'answer',
+          'topic',
+        ],
       },
     },
+
     notes: {
       type: 'array',
-      items: { type: 'string' },
+
+      items: {
+        type: 'string',
+      },
     },
   },
+
   required: [
     'title',
     'subject',
@@ -106,8 +273,12 @@ const FLASHCARDS_SCHEMA = {
 async function readEntirePdf(file) {
   console.log('[PDF] Iniciando leitura completa...');
 
-  // Uint8Array puro: o pdf-parse falha com "bad XRef entry" em Buffer (Node novo)
-  const pdf = await pdfParse(new Uint8Array(file.buffer));
+  // Uint8Array puro: o pdf-parse falha com
+  // "bad XRef entry" em Buffer (Node novo).
+
+  const pdf = await pdfParse(
+    new Uint8Array(file.buffer)
+  );
 
   const text = String(pdf.text || '')
     .replace(/\r/g, '\n')
@@ -115,9 +286,17 @@ async function readEntirePdf(file) {
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 
-  console.log(`[PDF] Total de páginas: ${pdf.numpages}`);
-  console.log(`[PDF] Total de caracteres: ${text.length}`);
-  console.log('[PDF] Nenhum corte de texto aplicado.');
+  console.log(
+    `[PDF] Total de páginas: ${pdf.numpages}`
+  );
+
+  console.log(
+    `[PDF] Total de caracteres: ${text.length}`
+  );
+
+  console.log(
+    '[PDF] Nenhum corte de texto aplicado.'
+  );
 
   return {
     text,
@@ -162,9 +341,11 @@ async function prepareInput(file, typedText, subject) {
 
       if (pdf.text.length >= 100) {
         // Envia todo o texto extraído.
-        // Não existe slice ou limite de caracteres aqui.
+        // Não existe corte de caracteres aqui.
+
         input.push({
           type: 'text',
+
           text:
             `DOCUMENTO COMPLETO (${pdf.pages} páginas):\n\n` +
             pdf.text,
@@ -176,6 +357,7 @@ async function prepareInput(file, typedText, subject) {
       } else {
         // PDF digitalizado: não há texto suficiente
         // para extrair com pdf-parse.
+
         console.log(
           '[PDF] Texto insuficiente. Enviando PDF original.'
         );
@@ -228,7 +410,9 @@ function getResponseText(data) {
   const parts = [];
 
   for (const step of data.steps || []) {
-    if (step.type !== 'model_output') continue;
+    if (step.type !== 'model_output') {
+      continue;
+    }
 
     for (const item of step.content || []) {
       if (typeof item.text === 'string') {
@@ -259,7 +443,9 @@ function parseJson(text) {
     const end = cleaned.lastIndexOf('}');
 
     if (start >= 0 && end > start) {
-      return JSON.parse(cleaned.slice(start, end + 1));
+      return JSON.parse(
+        cleaned.slice(start, end + 1)
+      );
     }
 
     throw new Error(
@@ -273,7 +459,9 @@ function parseJson(text) {
 // ========================================
 
 function wait(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise(
+    resolve => setTimeout(resolve, ms)
+  );
 }
 
 function isTemporaryError(status, message) {
@@ -285,7 +473,11 @@ async function generateWithGemini(input) {
   const url =
     'https://generativelanguage.googleapis.com/v1beta/interactions';
 
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+  for (
+    let attempt = 1;
+    attempt <= MAX_ATTEMPTS;
+    attempt++
+  ) {
     console.log(
       `[Gemini] Tentativa ${attempt}/${MAX_ATTEMPTS}: ${MODEL}`
     );
@@ -293,30 +485,39 @@ async function generateWithGemini(input) {
     try {
       const response = await fetch(url, {
         method: 'POST',
+
         headers: {
           'Content-Type': 'application/json',
           'x-goog-api-key': API_KEY,
         },
+
         body: JSON.stringify({
           model: MODEL,
           input,
+
           response_format: {
             type: 'text',
             mime_type: 'application/json',
             schema: FLASHCARDS_SCHEMA,
           },
+
           generation_config: {
             max_output_tokens: 8192,
           },
+
           store: false,
         }),
+
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
 
-      const data = await response.json().catch(() => ({}));
+      const data = await response
+        .json()
+        .catch(() => ({}));
 
       if (!response.ok) {
-        const message = data.error?.message ||
+        const message =
+          data.error?.message ||
           `Erro HTTP ${response.status}`;
 
         console.warn(
@@ -324,7 +525,10 @@ async function generateWithGemini(input) {
         );
 
         if (
-          isTemporaryError(response.status, message) &&
+          isTemporaryError(
+            response.status,
+            message
+          ) &&
           attempt < MAX_ATTEMPTS
         ) {
           await wait(5000);
@@ -333,6 +537,7 @@ async function generateWithGemini(input) {
 
         const error = new Error(message);
         error.statusCode = response.status;
+
         throw error;
       }
 
@@ -344,9 +549,12 @@ async function generateWithGemini(input) {
         );
       }
 
-      console.log('[Gemini] Resposta recebida.');
+      console.log(
+        '[Gemini] Resposta recebida.'
+      );
 
       return parseJson(responseText);
+
     } catch (error) {
       const connectionError = [
         'TimeoutError',
@@ -354,9 +562,13 @@ async function generateWithGemini(input) {
         'TypeError',
       ].includes(error.name);
 
-      if (connectionError && attempt < MAX_ATTEMPTS) {
+      if (
+        connectionError &&
+        attempt < MAX_ATTEMPTS
+      ) {
         console.warn(
-          '[Gemini] Falha de conexão:', error.message
+          '[Gemini] Falha de conexão:',
+          error.message
         );
 
         await wait(5000);
@@ -385,6 +597,7 @@ app.get('/api/health', (_req, res) => {
     model: MODEL,
     maxUploadMb: MAX_UPLOAD_MB,
     pdfMode: 'full-text',
+    authRequired: true,
   });
 });
 
@@ -394,12 +607,22 @@ app.get('/api/health', (_req, res) => {
 
 app.post(
   '/api/materials/flashcards',
+
+  // Primeiro valida a identidade.
+  requireFirebaseAuth,
+
+  // Depois verifica o limite por usuário.
+  aiRateLimiter,
+
+  // Só então processa o arquivo.
   upload.single('file'),
+
   async (req, res, next) => {
     try {
       if (!API_KEY) {
         return res.status(503).json({
-          error: 'Configure GEMINI_API_KEY no arquivo .env.',
+          error:
+            'Configure GEMINI_API_KEY no arquivo .env.',
         });
       }
 
@@ -434,11 +657,21 @@ app.post(
       const cards = result.cards
         .slice(0, 8)
         .map(card => ({
-          question: String(card.question || '').trim(),
-          answer: String(card.answer || '').trim(),
-          topic: String(card.topic || '').trim(),
+          question: String(
+            card.question || ''
+          ).trim(),
+
+          answer: String(
+            card.answer || ''
+          ).trim(),
+
+          topic: String(
+            card.topic || ''
+          ).trim(),
         }))
-        .filter(card => card.question && card.answer);
+        .filter(
+          card => card.question && card.answer
+        );
 
       if (cards.length !== 8) {
         throw new Error(
@@ -452,22 +685,34 @@ app.post(
 
       return res.json({
         title: String(
-          result.title || 'Novo material de estudo'
+          result.title ||
+          'Novo material de estudo'
         ),
+
         subject: String(
           result.subject ||
           req.body.subject ||
           'Matéria'
         ),
-        summary: String(result.summary || ''),
+
+        summary: String(
+          result.summary || ''
+        ),
+
         cards,
+
         notes: Array.isArray(result.notes)
           ? result.notes
           : [],
-        sourceName: req.file?.originalname ||
+
+        sourceName:
+          req.file?.originalname ||
           'Texto digitado',
-        generatedAt: new Date().toISOString(),
+
+        generatedAt:
+          new Date().toISOString(),
       });
+
     } catch (error) {
       next(error);
     }
@@ -479,7 +724,10 @@ app.post(
 // ========================================
 
 app.use((error, _req, res, _next) => {
-  console.error('[StudyCards] Erro:', error.message);
+  console.error(
+    '[StudyCards] Erro:',
+    error.message
+  );
 
   if (error instanceof multer.MulterError) {
     return res.status(413).json({
@@ -488,9 +736,14 @@ app.use((error, _req, res, _next) => {
     });
   }
 
-  const message = String(error.message || '');
+  const message = String(
+    error.message || ''
+  );
 
-  if (/high demand|overloaded|try again later/i.test(message)) {
+  if (
+    /high demand|overloaded|try again later/i
+      .test(message)
+  ) {
     return res.status(503).json({
       error:
         'A Gemini está sobrecarregada no momento. Tente novamente mais tarde.',
@@ -515,7 +768,13 @@ app.use((error, _req, res, _next) => {
       : 400;
 
   return res.status(status).json({
-    error: message || 'Erro ao gerar flashcards.',
+    error:
+      status >= 500
+        ? 'Falha temporária ao gerar flashcards.'
+        : (
+            message ||
+            'Erro ao gerar flashcards.'
+          ),
   });
 });
 
@@ -528,14 +787,25 @@ app.listen(PORT, () => {
     `Study Cards AI backend ativo em http://localhost:${PORT}`
   );
 
-  console.log(`[Gemini] Modelo: ${MODEL}`);
   console.log(
-    `[Gemini] Chave configurada: ${API_KEY ? 'SIM' : 'NÃO'}`
+    `[Gemini] Modelo: ${MODEL}`
   );
+
+  console.log(
+    `[Gemini] Chave configurada: ${
+      API_KEY ? 'SIM' : 'NÃO'
+    }`
+  );
+
   console.log(
     `[StudyCards] Limite de upload: ${MAX_UPLOAD_MB} MB`
   );
+
   console.log(
     '[PDF] Modo: leitura integral, sem truncamento.'
+  );
+
+  console.log(
+    '[Auth] Firebase Admin inicializado.'
   );
 });

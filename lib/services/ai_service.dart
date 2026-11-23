@@ -2,10 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 
 /// Cliente HTTP do StudyCards.
+///
 /// A chave da Gemini permanece somente no backend.
+/// O aplicativo envia o token do Firebase Authentication
+/// para que o servidor possa validar a identidade do usuário.
 class AiService {
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
@@ -26,7 +30,35 @@ class AiService {
       print('[StudyCards] Endpoint: $uri');
       print('[StudyCards] Iniciando geração de flashcards...');
 
+      // =========================================
+      // AUTENTICAÇÃO FIREBASE
+      // =========================================
+
+      final usuario = FirebaseAuth.instance.currentUser;
+
+      if (usuario == null) {
+        throw Exception(
+          'Você precisa estar conectado para gerar flashcards com IA.',
+        );
+      }
+
+      final token = await usuario.getIdToken();
+
+      if (token == null || token.isEmpty) {
+        throw Exception(
+          'Não foi possível autenticar sua sessão. '
+          'Faça login novamente.',
+        );
+      }
+
+      print('[StudyCards] Token de autenticação obtido.');
+
+      // =========================================
+      // PREPARAR REQUISIÇÃO
+      // =========================================
+
       final request = http.MultipartRequest('POST', uri)
+        ..headers['Authorization'] = 'Bearer $token'
         ..fields['text'] = texto ?? ''
         ..fields['subject'] = materia ?? ''
         ..fields['count'] = '8';
@@ -38,6 +70,10 @@ class AiService {
           await http.MultipartFile.fromPath('file', arquivo.path),
         );
       }
+
+      // =========================================
+      // ENVIAR PARA O BACKEND
+      // =========================================
 
       print('[StudyCards] Enviando requisição ao backend...');
 
@@ -72,12 +108,19 @@ class AiService {
 
       throw Exception(
         'Não foi possível conectar ao backend. '
-        'Detalhes: $erro',
+        'Verifique sua conexão com a internet.',
       );
     } on http.ClientException catch (erro) {
       print('[StudyCards] ERRO HTTP: $erro');
 
       throw Exception('Falha na comunicação com o backend: $erro');
+    } on FirebaseAuthException catch (erro) {
+      print('[StudyCards] ERRO FIREBASE: ${erro.code}');
+
+      throw Exception(
+        'Não foi possível autenticar sua sessão. '
+        'Faça login novamente.',
+      );
     } catch (erro, stackTrace) {
       print('[StudyCards] ERRO: $erro');
       print('[StudyCards] STACK TRACE: $stackTrace');
@@ -86,6 +129,10 @@ class AiService {
       client.close();
     }
   }
+
+  // =========================================
+  // INTERPRETAR RESPOSTA DO SERVIDOR
+  // =========================================
 
   static Map<String, dynamic> _decode(http.Response response) {
     Map<String, dynamic> body;
@@ -97,6 +144,17 @@ class AiService {
         'Resposta inválida do servidor '
         '(${response.statusCode}).',
       );
+    }
+
+    if (response.statusCode == 401) {
+      throw Exception(
+        'Sua sessão não foi autorizada. '
+        'Faça login novamente.',
+      );
+    }
+
+    if (response.statusCode == 403) {
+      throw Exception('Você não tem permissão para utilizar a IA.');
     }
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
