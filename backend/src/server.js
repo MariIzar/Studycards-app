@@ -222,6 +222,8 @@ const FLASHCARDS_SCHEMA = {
 
     cards: {
       type: 'array',
+      minItems: 8,
+      maxItems: 8,
 
       items: {
         type: 'object',
@@ -400,34 +402,13 @@ async function prepareInput(file, typedText, subject) {
 // ========================================
 
 function getResponseText(data) {
-  if (
-    typeof data.output_text === 'string' &&
-    data.output_text.trim()
-  ) {
-    return data.output_text.trim();
-  }
+  const parts = data.candidates?.[0]?.content?.parts || [];
 
-  const parts = [];
-
-  for (const step of data.steps || []) {
-    if (step.type !== 'model_output') {
-      continue;
-    }
-
-    for (const item of step.content || []) {
-      if (typeof item.text === 'string') {
-        parts.push(item.text);
-      }
-    }
-  }
-
-  for (const output of data.outputs || []) {
-    if (typeof output.text === 'string') {
-      parts.push(output.text);
-    }
-  }
-
-  return parts.join('\n').trim();
+  return parts
+    .filter(part => typeof part.text === 'string')
+    .map(part => part.text)
+    .join('\n')
+    .trim();
 }
 
 function parseJson(text) {
@@ -471,13 +452,9 @@ function isTemporaryError(status, message) {
 
 async function generateWithGemini(input) {
   const url =
-    'https://generativelanguage.googleapis.com/v1beta/interactions';
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(MODEL)}:generateContent`;
 
-  for (
-    let attempt = 1;
-    attempt <= MAX_ATTEMPTS;
-    attempt++
-  ) {
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     console.log(
       `[Gemini] Tentativa ${attempt}/${MAX_ATTEMPTS}: ${MODEL}`
     );
@@ -485,35 +462,44 @@ async function generateWithGemini(input) {
     try {
       const response = await fetch(url, {
         method: 'POST',
-
         headers: {
           'Content-Type': 'application/json',
           'x-goog-api-key': API_KEY,
         },
-
         body: JSON.stringify({
-          model: MODEL,
-          input,
+          contents: [
+            {
+              role: 'user',
+              parts: input.map(item => {
+                if (item.type === 'text') {
+                  return { text: item.text };
+                }
 
-          response_format: {
-            type: 'text',
-            mime_type: 'application/json',
-            schema: FLASHCARDS_SCHEMA,
+                if (item.type === 'image' || item.type === 'document') {
+                  return {
+                    inlineData: {
+                      mimeType: item.mime_type,
+                      data: item.data,
+                    },
+                  };
+                }
+
+                throw new Error(
+                  `Tipo de conteúdo não suportado: ${item.type}`
+                );
+              }),
+            },
+          ],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            responseSchema: FLASHCARDS_SCHEMA,
+            maxOutputTokens: 8192,
           },
-
-          generation_config: {
-            max_output_tokens: 8192,
-          },
-
-          store: false,
         }),
-
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
 
-      const data = await response
-        .json()
-        .catch(() => ({}));
+      const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
         const message =
@@ -525,10 +511,7 @@ async function generateWithGemini(input) {
         );
 
         if (
-          isTemporaryError(
-            response.status,
-            message
-          ) &&
+          isTemporaryError(response.status, message) &&
           attempt < MAX_ATTEMPTS
         ) {
           await wait(5000);
@@ -537,7 +520,6 @@ async function generateWithGemini(input) {
 
         const error = new Error(message);
         error.statusCode = response.status;
-
         throw error;
       }
 
@@ -549,9 +531,7 @@ async function generateWithGemini(input) {
         );
       }
 
-      console.log(
-        '[Gemini] Resposta recebida.'
-      );
+      console.log('[Gemini] Resposta recebida.');
 
       return parseJson(responseText);
 
@@ -562,10 +542,7 @@ async function generateWithGemini(input) {
         'TypeError',
       ].includes(error.name);
 
-      if (
-        connectionError &&
-        attempt < MAX_ATTEMPTS
-      ) {
+      if (connectionError && attempt < MAX_ATTEMPTS) {
         console.warn(
           '[Gemini] Falha de conexão:',
           error.message

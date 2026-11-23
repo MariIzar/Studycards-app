@@ -13,7 +13,7 @@ import 'package:http/http.dart' as http;
 class AiService {
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://192.168.0.69:3000',
+    defaultValue: 'https://studycards-ai-backend.onrender.com',
   );
 
   static Future<Map<String, dynamic>> gerarFlashcards({
